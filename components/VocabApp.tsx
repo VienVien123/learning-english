@@ -59,7 +59,6 @@ export default function VocabApp() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [toast, setToast] = useState("");
   const [recoveryMode, setRecoveryMode] = useState(false);
-  const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
 
   const flashWords = useMemo(() => {
     const inDeck = deckFilter === "all" ? words : words.filter((w) => w.deck_id === deckFilter);
@@ -143,7 +142,6 @@ export default function VocabApp() {
 
   useEffect(() => {
     let mounted = true;
-    setNeedsPasswordSetup(localStorage.getItem("lexibloom-upgrade-needs-password") === "1");
     setRecoveryMode(new URLSearchParams(window.location.search).get("recovery") === "1");
 
     (async () => {
@@ -170,9 +168,116 @@ export default function VocabApp() {
     };
   }, []);
 
+  const restoreGuestBackup = useCallback(async (uid: string) => {
+    const raw = localStorage.getItem("lexibloom-guest-backup");
+    if (!raw) return 0;
+
+    let backup: {
+      decks?: Deck[];
+      words?: Vocabulary[];
+      reviews?: Array<{
+        id: string;
+        user_id: string;
+        vocabulary_id: string;
+        rating: number;
+        previous_level: number | null;
+        new_level: number | null;
+        reviewed_at: string;
+      }>;
+    };
+
+    try {
+      backup = JSON.parse(raw);
+    } catch {
+      localStorage.removeItem("lexibloom-guest-backup");
+      return 0;
+    }
+
+    const deckMap = new Map<string, string>();
+    const wordMap = new Map<string, string>();
+
+    for (const deck of backup.decks ?? []) {
+      const { data, error } = await supabase.from("decks").insert({
+        user_id: uid,
+        name: deck.name,
+        description: deck.description,
+        icon: deck.icon,
+        color: deck.color,
+        created_at: deck.created_at,
+        updated_at: deck.updated_at,
+      }).select("id").single();
+
+      if (error) throw new Error(`Không thể chuyển deck “${deck.name}”: ${error.message}`);
+      deckMap.set(deck.id, data.id);
+    }
+
+    for (const word of backup.words ?? []) {
+      const { data, error } = await supabase.from("vocabularies").insert({
+        user_id: uid,
+        deck_id: word.deck_id ? deckMap.get(word.deck_id) ?? null : null,
+        word: word.word,
+        meaning: word.meaning,
+        pronunciation: word.pronunciation,
+        part_of_speech: word.part_of_speech,
+        example: word.example,
+        example_translation: word.example_translation,
+        note: word.note,
+        synonyms: word.synonyms ?? [],
+        antonyms: word.antonyms ?? [],
+        tags: word.tags ?? [],
+        image_url: word.image_url,
+        favorite: word.favorite,
+        mastery_level: word.mastery_level,
+        review_count: word.review_count,
+        correct_count: word.correct_count,
+        wrong_count: word.wrong_count,
+        last_reviewed_at: word.last_reviewed_at,
+        next_review_at: word.next_review_at,
+        created_at: word.created_at,
+        updated_at: word.updated_at,
+      }).select("id").single();
+
+      if (error) throw new Error(`Không thể chuyển từ “${word.word}”: ${error.message}`);
+      wordMap.set(word.id, data.id);
+    }
+
+    for (const review of backup.reviews ?? []) {
+      const newVocabularyId = wordMap.get(review.vocabulary_id);
+      if (!newVocabularyId) continue;
+
+      const { error } = await supabase.from("review_history").insert({
+        user_id: uid,
+        vocabulary_id: newVocabularyId,
+        rating: review.rating,
+        previous_level: review.previous_level,
+        new_level: review.new_level,
+        reviewed_at: review.reviewed_at,
+      });
+
+      if (error) throw new Error(`Không thể chuyển lịch sử ôn tập: ${error.message}`);
+    }
+
+    localStorage.removeItem("lexibloom-guest-backup");
+    localStorage.removeItem("lexibloom-auth-next-mode");
+    localStorage.removeItem("lexibloom-auth-prefill-email");
+
+    return (backup.words ?? []).length;
+  }, []);
+
   useEffect(() => {
     if (!user || user.is_anonymous) return;
-    loadData(user.id);
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const moved = await restoreGuestBackup(user.id);
+        if (!cancelled && moved > 0) showToast(`Đã chuyển ${moved} từ vựng guest vào tài khoản này`);
+      } catch (error) {
+        if (!cancelled) showToast(error instanceof Error ? error.message : "Không thể chuyển dữ liệu guest");
+      }
+      if (!cancelled) await loadData(user.id);
+    })();
 
     const channel = supabase
       .channel(`lexibloom-${user.id}`)
@@ -180,8 +285,11 @@ export default function VocabApp() {
       .on("postgres_changes", { event: "*", schema: "public", table: "vocabularies", filter: `user_id=eq.${user.id}` }, () => loadData(user.id, true))
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [user, loadData]);
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [user, loadData, restoreGuestBackup, showToast]);
 
   function toggleTheme() {
     const next = theme === "light" ? "dark" : "light";
@@ -292,6 +400,34 @@ export default function VocabApp() {
     });
   }
 
+  async function prepareGuestMigration(nextMode: "login" | "register", prefillEmail?: string) {
+    if (!user?.is_anonymous) return;
+
+    const [decksRes, wordsRes, reviewsRes] = await Promise.all([
+      supabase.from("decks").select("*").eq("user_id", user.id).order("created_at", { ascending: true }),
+      supabase.from("vocabularies").select("*").eq("user_id", user.id).order("created_at", { ascending: true }),
+      supabase.from("review_history").select("*").eq("user_id", user.id).order("reviewed_at", { ascending: true }),
+    ]);
+
+    if (decksRes.error) throw new Error(decksRes.error.message);
+    if (wordsRes.error) throw new Error(wordsRes.error.message);
+    if (reviewsRes.error) throw new Error(reviewsRes.error.message);
+
+    localStorage.setItem("lexibloom-guest-backup", JSON.stringify({
+      decks: decksRes.data ?? [],
+      words: wordsRes.data ?? [],
+      reviews: reviewsRes.data ?? [],
+      savedAt: new Date().toISOString(),
+    }));
+    localStorage.setItem("lexibloom-auth-next-mode", nextMode);
+    if (prefillEmail) localStorage.setItem("lexibloom-auth-prefill-email", prefillEmail);
+
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    if (error) throw new Error(error.message);
+  }
+
+
+
   async function handleSignOut() {
     const { error } = await supabase.auth.signOut();
     if (error) {
@@ -307,14 +443,12 @@ export default function VocabApp() {
     return <div className="boot-screen"><div className="brand-mark"><BookOpen size={28} /></div><Loader2 className="spin" size={22} /><p>Preparing your vocabulary space…</p></div>;
   }
 
-  if (!user || user.is_anonymous || recoveryMode || (needsPasswordSetup && !user.is_anonymous)) {
+  if (!user || user.is_anonymous || recoveryMode) {
     return (
       <AuthScreen
         user={user}
         recoveryMode={recoveryMode}
-        needsPasswordSetup={needsPasswordSetup}
-        onUpgradeStarted={() => setNeedsPasswordSetup(true)}
-        onPasswordSet={() => setNeedsPasswordSetup(false)}
+        onPrepareGuestMigration={prepareGuestMigration}
         onRecoveryDone={() => {
           setRecoveryMode(false);
           const url = new URL(window.location.href);

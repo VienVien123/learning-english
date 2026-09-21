@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
 import {
   ArrowLeft,
@@ -17,14 +17,12 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-type Mode = "login" | "register" | "forgot" | "upgrade" | "recovery" | "set-password";
+type Mode = "login" | "register" | "forgot" | "upgrade" | "recovery";
 
 type Props = {
   user: User | null;
   recoveryMode?: boolean;
-  needsPasswordSetup?: boolean;
-  onUpgradeStarted?: () => void;
-  onPasswordSet?: () => void;
+  onPrepareGuestMigration?: (nextMode: "login" | "register", email?: string) => Promise<void>;
   onRecoveryDone?: () => void;
 };
 
@@ -32,28 +30,21 @@ function friendlyError(message: string) {
   const lower = message.toLowerCase();
   if (lower.includes("invalid login credentials")) return "Email hoặc mật khẩu chưa đúng.";
   if (lower.includes("email not confirmed")) return "Bạn cần xác nhận email trước khi đăng nhập.";
-  if (lower.includes("user already registered")) return "Email này đã có tài khoản. Hãy đăng nhập.";
-  if (lower.includes("password should be")) return "Mật khẩu chưa đạt yêu cầu của Supabase.";
-  if (lower.includes("rate limit")) return "Bạn thao tác quá nhanh. Hãy thử lại sau một lúc.";
+  if (lower.includes("user already registered") || lower.includes("already been registered")) return "Email này đã có tài khoản. Hãy đăng nhập.";
+  if (lower.includes("password should be") || lower.includes("weak password")) return "Mật khẩu chưa đạt yêu cầu. Hãy dùng ít nhất 8 ký tự.";
+  if (lower.includes("rate limit") || lower.includes("email rate limit")) {
+    return "Supabase đang giới hạn gửi email trong thời gian ngắn. Hãy chờ một lúc rồi thử lại, hoặc tắt Confirm email khi đang phát triển.";
+  }
   return message;
 }
 
 export default function AuthScreen({
   user,
   recoveryMode = false,
-  needsPasswordSetup = false,
-  onUpgradeStarted,
-  onPasswordSet,
+  onPrepareGuestMigration,
   onRecoveryDone,
 }: Props) {
-  const initialMode = useMemo<Mode>(() => {
-    if (recoveryMode) return "recovery";
-    if (needsPasswordSetup && user && !user.is_anonymous) return "set-password";
-    if (user?.is_anonymous) return "upgrade";
-    return "login";
-  }, [recoveryMode, needsPasswordSetup, user]);
-
-  const [mode, setMode] = useState<Mode>(initialMode);
+  const [mode, setMode] = useState<Mode>(recoveryMode ? "recovery" : user?.is_anonymous ? "upgrade" : "login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState(user?.email ?? "");
   const [password, setPassword] = useState("");
@@ -68,12 +59,27 @@ export default function AuthScreen({
       setMode("recovery");
       return;
     }
-    if (needsPasswordSetup && user && !user.is_anonymous) {
-      setMode("set-password");
+
+    if (user?.is_anonymous) {
+      setMode("upgrade");
       return;
     }
-    if (user?.is_anonymous) setMode("upgrade");
-  }, [recoveryMode, needsPasswordSetup, user]);
+
+    const nextMode = localStorage.getItem("lexibloom-auth-next-mode");
+    const prefillEmail = localStorage.getItem("lexibloom-auth-prefill-email");
+
+    if (nextMode === "register" || nextMode === "login") {
+      setMode(nextMode);
+      localStorage.removeItem("lexibloom-auth-next-mode");
+    } else {
+      setMode("login");
+    }
+
+    if (prefillEmail) {
+      setEmail(prefillEmail);
+      localStorage.removeItem("lexibloom-auth-prefill-email");
+    }
+  }, [recoveryMode, user]);
 
   const resetFeedback = () => {
     setError("");
@@ -91,10 +97,12 @@ export default function AuthScreen({
     e.preventDefault();
     resetFeedback();
     setBusy(true);
+
     const { error: authError } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
     });
+
     setBusy(false);
     if (authError) setError(friendlyError(authError.message));
   }
@@ -102,31 +110,36 @@ export default function AuthScreen({
   async function register(e: FormEvent) {
     e.preventDefault();
     resetFeedback();
+
     if (password.length < 8) {
-      setError("Mật khẩu nên có ít nhất 8 ký tự.");
+      setError("Mật khẩu phải có ít nhất 8 ký tự.");
       return;
     }
     if (password !== confirmPassword) {
       setError("Hai mật khẩu không giống nhau.");
       return;
     }
+
     setBusy(true);
-    const origin = window.location.origin;
     const { data, error: authError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
         data: { display_name: name.trim() || undefined },
-        emailRedirectTo: `${origin}/?verified=1`,
+        emailRedirectTo: `${window.location.origin}/?verified=1`,
       },
     });
     setBusy(false);
+
     if (authError) {
       setError(friendlyError(authError.message));
       return;
     }
+
     if (!data.session) {
-      setNotice("Tài khoản đã được tạo. Hãy mở email xác nhận, sau đó quay lại đăng nhập.");
+      setNotice("Tài khoản đã được tạo. Hãy mở email xác nhận, sau đó quay lại đăng nhập. Dữ liệu guest đã được giữ tạm trên trình duyệt và sẽ chuyển sau khi bạn đăng nhập.");
+    } else {
+      setNotice("Tạo tài khoản thành công. Đang chuyển dữ liệu cũ vào tài khoản...");
     }
   }
 
@@ -134,8 +147,11 @@ export default function AuthScreen({
     e.preventDefault();
     resetFeedback();
     setBusy(true);
-    const redirectTo = `${window.location.origin}/?recovery=1`;
-    const { error: authError } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+
+    const { error: authError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/?recovery=1`,
+    });
+
     setBusy(false);
     if (authError) {
       setError(friendlyError(authError.message));
@@ -147,61 +163,57 @@ export default function AuthScreen({
   async function updatePassword(e: FormEvent) {
     e.preventDefault();
     resetFeedback();
+
     if (password.length < 8) {
-      setError("Mật khẩu nên có ít nhất 8 ký tự.");
+      setError("Mật khẩu phải có ít nhất 8 ký tự.");
       return;
     }
     if (password !== confirmPassword) {
       setError("Hai mật khẩu không giống nhau.");
       return;
     }
+
     setBusy(true);
     const { error: authError } = await supabase.auth.updateUser({ password });
     setBusy(false);
+
     if (authError) {
       setError(friendlyError(authError.message));
       return;
     }
-    localStorage.removeItem("lexibloom-upgrade-needs-password");
+
     setNotice("Mật khẩu đã được cập nhật.");
-    if (mode === "set-password") onPasswordSet?.();
-    if (mode === "recovery") onRecoveryDone?.();
+    onRecoveryDone?.();
   }
 
-  async function upgradeGuest(e: FormEvent) {
+  async function keepGuestDataAndCreateAccount(e: FormEvent) {
     e.preventDefault();
     resetFeedback();
-    if (!user?.is_anonymous) return;
+    if (!user?.is_anonymous || !onPrepareGuestMigration) return;
+
     setBusy(true);
-    const { error: authError } = await supabase.auth.updateUser(
-      { email: email.trim() },
-      { emailRedirectTo: `${window.location.origin}/?upgrade=1` }
-    );
-    setBusy(false);
-    if (authError) {
-      setError(
-        `${friendlyError(authError.message)} Nếu project đang chặn việc liên kết identity, bật Manual Linking trong Supabase Auth hoặc chọn “Đăng nhập tài khoản đã có”.`
-      );
-      return;
+    try {
+      await onPrepareGuestMigration("register", email.trim());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể chuẩn bị dữ liệu guest để chuyển tài khoản.");
+      setBusy(false);
     }
-    localStorage.setItem("lexibloom-upgrade-needs-password", "1");
-    onUpgradeStarted?.();
-    setNotice("Đã gửi email xác nhận. Hãy mở email đó trên cùng trình duyệt. Sau khi xác nhận, LexiBloom sẽ yêu cầu bạn tạo mật khẩu. Dữ liệu từ vựng hiện tại sẽ giữ nguyên vì user_id không đổi.");
   }
 
-  async function leaveGuestAndLogin() {
+  async function keepGuestDataAndLogin() {
     resetFeedback();
+    if (!user?.is_anonymous || !onPrepareGuestMigration) return;
+
     setBusy(true);
-    const { error: authError } = await supabase.auth.signOut();
-    setBusy(false);
-    if (authError) {
-      setError(friendlyError(authError.message));
-      return;
+    try {
+      await onPrepareGuestMigration("login");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể chuẩn bị dữ liệu guest để chuyển tài khoản.");
+      setBusy(false);
     }
-    switchMode("login");
   }
 
-  const isPasswordMode = mode === "register" || mode === "recovery" || mode === "set-password";
+  const isPasswordMode = mode === "register" || mode === "recovery";
 
   return (
     <main className="auth-page">
@@ -242,7 +254,7 @@ export default function AuthScreen({
           {mode === "register" && (
             <>
               <button className="auth-back" onClick={() => switchMode("login")}><ArrowLeft size={16} /> Quay lại đăng nhập</button>
-              <div className="auth-heading"><span className="auth-icon"><UserPlus size={20} /></span><div><h2>Tạo tài khoản</h2><p>Từ vựng sẽ gắn với tài khoản này thay vì trình duyệt.</p></div></div>
+              <div className="auth-heading"><span className="auth-icon"><UserPlus size={20} /></span><div><h2>Tạo tài khoản</h2><p>Từ vựng sẽ được gắn với tài khoản và đồng bộ giữa các thiết bị.</p></div></div>
               <form className="auth-form" onSubmit={register}>
                 <label className="auth-label"><span>Tên hiển thị</span><div className="auth-input"><UserPlus size={17} /><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Tên của bạn" /></div></label>
                 <Field label="Email"><Mail size={17} /><input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></Field>
@@ -268,22 +280,22 @@ export default function AuthScreen({
 
           {mode === "upgrade" && (
             <>
-              <div className="auth-heading"><span className="auth-icon"><ShieldCheck size={20} /></span><div><h2>Bảo vệ dữ liệu đang có</h2><p>Trình duyệt này đang có một tài khoản khách. Bạn có thể gắn email vào chính user này để giữ nguyên toàn bộ từ đã lưu.</p></div></div>
-              <div className="guest-data-note"><ShieldCheck size={19} /><div><strong>Giữ nguyên user_id hiện tại</strong><span>Deck, vocabulary và review history không cần copy sang bảng mới.</span></div></div>
-              <form className="auth-form" onSubmit={upgradeGuest}>
-                <Field label="Email muốn gắn vào tài khoản"><Mail size={17} /><input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></Field>
+              <div className="auth-heading"><span className="auth-icon"><ShieldCheck size={20} /></span><div><h2>Chuyển dữ liệu sang tài khoản</h2><p>Không dùng Manual Linking nữa. LexiBloom sẽ sao lưu dữ liệu guest trong trình duyệt, sau đó chuyển sang tài khoản thật khi bạn đăng nhập.</p></div></div>
+              <div className="guest-data-note"><ShieldCheck size={19} /><div><strong>Giữ deck, vocabulary và lịch sử ôn</strong><span>Dữ liệu sẽ được copy sang user_id của tài khoản mới sau khi đăng nhập thành công.</span></div></div>
+              <form className="auth-form" onSubmit={keepGuestDataAndCreateAccount}>
+                <Field label="Email tài khoản mới"><Mail size={17} /><input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></Field>
                 <Feedback error={error} notice={notice} />
                 <button className="auth-submit" disabled={busy}>{busy ? <Loader2 className="spin" size={18} /> : <ShieldCheck size={17} />} Giữ dữ liệu và tạo tài khoản</button>
               </form>
               <div className="auth-divider"><span>hoặc</span></div>
-              <button className="auth-secondary" disabled={busy} onClick={leaveGuestAndLogin}>Đăng nhập tài khoản đã có</button>
-              <p className="auth-warning">Nếu chọn đăng nhập tài khoản khác, dữ liệu của tài khoản khách cũ vẫn còn trong Supabase nhưng sẽ không tự chuyển sang tài khoản đó.</p>
+              <button className="auth-secondary" disabled={busy} onClick={keepGuestDataAndLogin}>Giữ dữ liệu và đăng nhập tài khoản đã có</button>
+              <p className="auth-warning">Bản sửa này không gọi updateUser(email) trên anonymous user nên không còn lỗi Manual Linking ở bước chuyển dữ liệu.</p>
             </>
           )}
 
-          {(mode === "recovery" || mode === "set-password") && (
+          {mode === "recovery" && (
             <>
-              <div className="auth-heading"><span className="auth-icon"><ShieldCheck size={20} /></span><div><h2>{mode === "recovery" ? "Tạo mật khẩu mới" : "Hoàn tất tài khoản"}</h2><p>{mode === "recovery" ? "Đặt mật khẩu mới cho tài khoản của bạn." : "Email đã được xác nhận. Tạo mật khẩu để sau này có thể đăng nhập lại."}</p></div></div>
+              <div className="auth-heading"><span className="auth-icon"><ShieldCheck size={20} /></span><div><h2>Tạo mật khẩu mới</h2><p>Đặt mật khẩu mới cho tài khoản của bạn.</p></div></div>
               <form className="auth-form" onSubmit={updatePassword}>
                 <Field label="Mật khẩu mới"><LockKeyhole size={17} /><input type={showPassword ? "text" : "password"} autoComplete="new-password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Ít nhất 8 ký tự" /><button type="button" className="password-toggle" onClick={() => setShowPassword((v) => !v)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></Field>
                 <Field label="Nhập lại mật khẩu"><ShieldCheck size={17} /><input type={showPassword ? "text" : "password"} autoComplete="new-password" required minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Nhập lại mật khẩu" /></Field>
@@ -293,7 +305,7 @@ export default function AuthScreen({
             </>
           )}
 
-          {isPasswordMode && <p className="auth-footnote">Mật khẩu chỉ được gửi tới Supabase Auth qua kết nối HTTPS; app không lưu mật khẩu trong bảng vocabulary.</p>}
+          {isPasswordMode && <p className="auth-footnote">Mật khẩu được Supabase Auth xử lý; app không lưu mật khẩu trong bảng vocabulary.</p>}
         </div>
       </section>
     </main>
