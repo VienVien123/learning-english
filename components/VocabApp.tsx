@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen, Brain, ChartNoAxesCombined, Check, ChevronDown, Flame, FolderOpen, Heart,
   LayoutDashboard, Library, Loader2, Moon, MoreHorizontal, Pencil, Plus, Search, Sparkles,
-  Sun, Trash2, Volume2, Wifi, WifiOff, X, Zap, LogOut, Gamepad2, Trophy
+  Sun, Trash2, Volume2, Wifi, WifiOff, X, Zap, LogOut, Gamepad2, Trophy, FileUp
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
@@ -16,6 +16,7 @@ import DeckModal, { type DeckDraft } from "./DeckModal";
 import FlashcardStudy from "./FlashcardStudy";
 import AuthScreen from "./AuthScreen";
 import GamesView, { AchievementsView } from "./GamesView";
+import ImportWordsModal from "./ImportWordsModal";
 
 const navItems: { id: ViewName; label: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -60,10 +61,13 @@ export default function VocabApp() {
   const [levelFilter, setLevelFilter] = useState("all");
   const [wordModalOpen, setWordModalOpen] = useState(false);
   const [deckModalOpen, setDeckModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [editingWord, setEditingWord] = useState<Vocabulary | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [toast, setToast] = useState("");
   const [recoveryMode, setRecoveryMode] = useState(false);
+  const currentUserIdRef = useRef<string | null>(null);
+  const draftRestoreCheckedRef = useRef<string | null>(null);
 
   const flashWords = useMemo(() => {
     const inDeck = deckFilter === "all" ? words : words.filter((w) => w.deck_id === deckFilter);
@@ -165,22 +169,44 @@ export default function VocabApp() {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!mounted) return;
-      setUser(session?.user ?? null);
+
+      const nextUser = session?.user ?? null;
+      currentUserIdRef.current = nextUser?.id ?? null;
+      setUser(nextUser);
       setAuthReady(true);
-      if (!session?.user) setLoading(false);
+      if (!nextUser) setLoading(false);
     })();
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
-      setUser(session?.user ?? null);
-      if (!session?.user) {
+
+      if (event === "PASSWORD_RECOVERY") {
+        setRecoveryMode(true);
+      }
+
+      const nextUser = session?.user ?? null;
+      const nextUserId = nextUser?.id ?? null;
+
+      // Supabase có thể phát SIGNED_IN hoặc TOKEN_REFRESHED khi tab được focus lại.
+      // Nếu vẫn là cùng một user thì KHÔNG setUser lại, vì một User object mới
+      // sẽ làm effect tải dữ liệu chạy lại và khiến giao diện trông như reload.
+      if (nextUserId === currentUserIdRef.current) {
+        setAuthReady(true);
+        return;
+      }
+
+      currentUserIdRef.current = nextUserId;
+      setUser(nextUser);
+      setAuthReady(true);
+
+      if (!nextUser) {
         setDecks([]);
         setWords([]);
         setProgress(emptyProgress());
         setLoading(false);
       }
-      if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
     });
+
     return () => {
       mounted = false;
       sub.subscription.unsubscribe();
@@ -284,32 +310,70 @@ export default function VocabApp() {
   }, []);
 
   useEffect(() => {
-    if (!user || user.is_anonymous) return;
+    const userId = user?.id;
+    if (!userId || user?.is_anonymous) return;
 
     let cancelled = false;
 
     (async () => {
       try {
-        const moved = await restoreGuestBackup(user.id);
+        const moved = await restoreGuestBackup(userId);
         if (!cancelled && moved > 0) showToast(`Đã chuyển ${moved} từ vựng guest vào tài khoản này`);
       } catch (error) {
         if (!cancelled) showToast(error instanceof Error ? error.message : "Không thể chuyển dữ liệu guest");
       }
-      if (!cancelled) await loadData(user.id);
+      if (!cancelled) await loadData(userId);
     })();
 
     const channel = supabase
-      .channel(`lexibloom-${user.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "decks", filter: `user_id=eq.${user.id}` }, () => loadData(user.id, true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "vocabularies", filter: `user_id=eq.${user.id}` }, () => loadData(user.id, true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "user_progress", filter: `user_id=eq.${user.id}` }, () => loadData(user.id, true))
+      .channel(`lexibloom-${userId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "decks", filter: `user_id=eq.${userId}` }, () => loadData(userId, true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "vocabularies", filter: `user_id=eq.${userId}` }, () => loadData(userId, true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_progress", filter: `user_id=eq.${userId}` }, () => loadData(userId, true))
       .subscribe();
 
     return () => {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [user, loadData, restoreGuestBackup, showToast]);
+  }, [user?.id, user?.is_anonymous, loadData, restoreGuestBackup, showToast]);
+
+  // Nếu browser thật sự reload/discard tab, WordModal đã lưu draft trong localStorage.
+  // Sau khi dữ liệu user tải xong, tự mở lại đúng form để người dùng tiếp tục gõ.
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId || user?.is_anonymous || loading) return;
+    if (draftRestoreCheckedRef.current === userId) return;
+
+    draftRestoreCheckedRef.current = userId;
+    const prefix = `lexibloom-word-draft:${userId}:`;
+
+    try {
+      const newDraftKey = `${prefix}new`;
+      if (localStorage.getItem(newDraftKey)) {
+        setEditingWord(null);
+        setWordModalOpen(true);
+        return;
+      }
+
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (!key?.startsWith(prefix)) continue;
+
+        const wordId = key.slice(prefix.length);
+        if (!wordId || wordId === "new") continue;
+
+        const existingWord = words.find((word) => word.id === wordId);
+        if (existingWord) {
+          setEditingWord(existingWord);
+          setWordModalOpen(true);
+          return;
+        }
+      }
+    } catch {
+      // Nếu localStorage bị chặn thì bỏ qua, app vẫn hoạt động bình thường.
+    }
+  }, [user?.id, user?.is_anonymous, loading, words]);
 
   function toggleTheme() {
     const next = theme === "light" ? "dark" : "light";
@@ -548,7 +612,7 @@ export default function VocabApp() {
 
         <section className="content">
           {view === "dashboard" && <Dashboard words={words} decks={decks} stats={stats} progress={progress} weakWords={weakWords} setView={setView} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
-          {view === "words" && <VocabularyView words={filteredWords} decks={decks} query={query} setQuery={setQuery} deckFilter={deckFilter} setDeckFilter={setDeckFilter} levelFilter={levelFilter} setLevelFilter={setLevelFilter} onEdit={(w) => { setEditingWord(w); setWordModalOpen(true); }} onDelete={deleteWord} onFavorite={toggleFavorite} />}
+          {view === "words" && <VocabularyView words={filteredWords} decks={decks} query={query} setQuery={setQuery} deckFilter={deckFilter} setDeckFilter={setDeckFilter} levelFilter={levelFilter} setLevelFilter={setLevelFilter} onEdit={(w) => { setEditingWord(w); setWordModalOpen(true); }} onDelete={deleteWord} onFavorite={toggleFavorite} onImport={() => setImportModalOpen(true)} onAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
           {view === "flashcards" && (
             <div>
               <PageHeader eyebrow="FOCUS MODE" title="Flashcard session" subtitle="Active recall + spaced repetition. Rate the card after revealing the answer." action={<select className="clean-select" value={deckFilter} onChange={(e) => setDeckFilter(e.target.value)}><option value="all">All decks</option>{decks.map((d) => <option key={d.id} value={d.id}>{d.icon} {d.name}</option>)}</select>} />
@@ -566,8 +630,26 @@ export default function VocabApp() {
         {navItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><Icon size={20} /><span>{item.label === "Vocabulary" ? "Words" : item.label}</span></button>; })}
       </nav>
 
-      <WordModal open={wordModalOpen} decks={decks} initial={editingWord} onClose={() => { setWordModalOpen(false); setEditingWord(null); }} onSave={saveWord} />
+      <WordModal
+        open={wordModalOpen}
+        decks={decks}
+        initial={editingWord}
+        draftStorageKey={`lexibloom-word-draft:${user.id}`}
+        onClose={() => { setWordModalOpen(false); setEditingWord(null); }}
+        onSave={saveWord}
+      />
       <DeckModal open={deckModalOpen} onClose={() => setDeckModalOpen(false)} onSave={createDeck} />
+      <ImportWordsModal
+        open={importModalOpen}
+        userId={user.id}
+        decks={decks}
+        words={words}
+        onClose={() => setImportModalOpen(false)}
+        onImported={async ({ inserted, updated, skipped }) => {
+          showToast(`Import xong: ${inserted} mới, ${updated} cập nhật${skipped ? `, ${skipped} bỏ qua` : ""}`);
+          await loadData(user.id, true);
+        }}
+      />
       {toast && <div className="toast"><Check size={16} /> {toast}</div>}
     </div>
   );
@@ -656,12 +738,12 @@ function EmptyWords({ openAdd }: { openAdd: () => void }) {
   return <div className="empty-inline"><div className="empty-icon"><BookOpen size={24} /></div><div><strong>Your vocabulary library is empty</strong><p>Add your first word and LexiBloom will schedule it for review.</p></div><button className="button primary" onClick={openAdd}><Plus size={16} /> Add first word</button></div>;
 }
 
-function VocabularyView({ words, decks, query, setQuery, deckFilter, setDeckFilter, levelFilter, setLevelFilter, onEdit, onDelete, onFavorite }: {
-  words: Vocabulary[]; decks: Deck[]; query: string; setQuery: (s: string) => void; deckFilter: string; setDeckFilter: (s: string) => void; levelFilter: string; setLevelFilter: (s: string) => void; onEdit: (w: Vocabulary) => void; onDelete: (w: Vocabulary) => void; onFavorite: (w: Vocabulary) => void;
+function VocabularyView({ words, decks, query, setQuery, deckFilter, setDeckFilter, levelFilter, setLevelFilter, onEdit, onDelete, onFavorite, onImport, onAdd }: {
+  words: Vocabulary[]; decks: Deck[]; query: string; setQuery: (s: string) => void; deckFilter: string; setDeckFilter: (s: string) => void; levelFilter: string; setLevelFilter: (s: string) => void; onEdit: (w: Vocabulary) => void; onDelete: (w: Vocabulary) => void; onFavorite: (w: Vocabulary) => void; onImport: () => void; onAdd: () => void;
 }) {
   return (
     <>
-      <PageHeader eyebrow="YOUR LIBRARY" title="Vocabulary" subtitle="Search, organize and refine every word you are learning." />
+      <PageHeader eyebrow="YOUR LIBRARY" title="Vocabulary" subtitle="Search, organize and refine every word you are learning." action={<div className="page-actions"><button className="button secondary" onClick={onImport}><FileUp size={16} /> Import CSV / Excel</button><button className="button primary" onClick={onAdd}><Plus size={16} /> Add word</button></div>} />
       <div className="filterbar">
         <div className="search-wide"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search word, meaning, example or tag..." />{query && <button onClick={() => setQuery("")}><X size={16} /></button>}</div>
         <label className="select-wrap"><FolderOpen size={16} /><select value={deckFilter} onChange={(e) => setDeckFilter(e.target.value)}><option value="all">All decks</option>{decks.map((d) => <option key={d.id} value={d.id}>{d.icon} {d.name}</option>)}</select><ChevronDown size={15} /></label>
