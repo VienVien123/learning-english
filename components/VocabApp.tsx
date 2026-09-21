@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BookOpen, Brain, ChartNoAxesCombined, Check, ChevronDown, Flame, FolderOpen, Heart,
   LayoutDashboard, Library, Loader2, Moon, MoreHorizontal, Pencil, Plus, Search, Sparkles,
-  Sun, Trash2, Volume2, Wifi, WifiOff, X, Zap
+  Sun, Trash2, Volume2, Wifi, WifiOff, X, Zap, LogOut
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
@@ -13,6 +13,7 @@ import { getReviewUpdate, isDue, masteryLabel } from "@/lib/srs";
 import WordModal, { type WordDraft } from "./WordModal";
 import DeckModal, { type DeckDraft } from "./DeckModal";
 import FlashcardStudy from "./FlashcardStudy";
+import AuthScreen from "./AuthScreen";
 
 const navItems: { id: ViewName; label: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -43,7 +44,6 @@ function formatDate(value: string | null) {
 export default function VocabApp() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const [authError, setAuthError] = useState("");
   const [view, setView] = useState<ViewName>("dashboard");
   const [decks, setDecks] = useState<Deck[]>([]);
   const [words, setWords] = useState<Vocabulary[]>([]);
@@ -58,6 +58,8 @@ export default function VocabApp() {
   const [editingWord, setEditingWord] = useState<Vocabulary | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [toast, setToast] = useState("");
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
 
   const flashWords = useMemo(() => {
     const inDeck = deckFilter === "all" ? words : words.filter((w) => w.deck_id === deckFilter);
@@ -141,28 +143,26 @@ export default function VocabApp() {
 
   useEffect(() => {
     let mounted = true;
+    setNeedsPasswordSetup(localStorage.getItem("lexibloom-upgrade-needs-password") === "1");
+    setRecoveryMode(new URLSearchParams(window.location.search).get("recovery") === "1");
+
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!mounted) return;
-      if (session?.user) {
-        setUser(session.user);
-        setAuthReady(true);
-        return;
-      }
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (!mounted) return;
-      if (error) {
-        setAuthError(error.message);
-        setAuthReady(true);
-        setLoading(false);
-        return;
-      }
-      setUser(data.user);
+      setUser(session?.user ?? null);
       setAuthReady(true);
+      if (!session?.user) setLoading(false);
     })();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) setUser(session.user);
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+      setUser(session?.user ?? null);
+      if (!session?.user) {
+        setDecks([]);
+        setWords([]);
+        setLoading(false);
+      }
+      if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
     });
     return () => {
       mounted = false;
@@ -171,7 +171,7 @@ export default function VocabApp() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.is_anonymous) return;
     loadData(user.id);
 
     const channel = supabase
@@ -292,23 +292,41 @@ export default function VocabApp() {
     });
   }
 
-  if (!authReady || (loading && !authError)) {
+  async function handleSignOut() {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      showToast(error.message);
+      return;
+    }
+    setView("dashboard");
+    setDeckFilter("all");
+    setQuery("");
+  }
+
+  if (!authReady) {
     return <div className="boot-screen"><div className="brand-mark"><BookOpen size={28} /></div><Loader2 className="spin" size={22} /><p>Preparing your vocabulary space…</p></div>;
   }
 
-  if (authError) {
+  if (!user || user.is_anonymous || recoveryMode || (needsPasswordSetup && !user.is_anonymous)) {
     return (
-      <div className="setup-error">
-        <div className="brand-mark"><BookOpen size={28} /></div>
-        <h1>One Supabase setting is still missing</h1>
-        <p>The app could not create an anonymous user.</p>
-        <code>{authError}</code>
-        <div className="setup-steps">
-          <strong>Open Supabase → Authentication → Sign In / Providers → Anonymous</strong>
-          <span>Enable anonymous sign-ins, save, then refresh this page.</span>
-        </div>
-      </div>
+      <AuthScreen
+        user={user}
+        recoveryMode={recoveryMode}
+        needsPasswordSetup={needsPasswordSetup}
+        onUpgradeStarted={() => setNeedsPasswordSetup(true)}
+        onPasswordSet={() => setNeedsPasswordSetup(false)}
+        onRecoveryDone={() => {
+          setRecoveryMode(false);
+          const url = new URL(window.location.href);
+          url.searchParams.delete("recovery");
+          window.history.replaceState({}, "", url.pathname + url.search);
+        }}
+      />
     );
+  }
+
+  if (loading) {
+    return <div className="boot-screen"><div className="brand-mark"><BookOpen size={28} /></div><Loader2 className="spin" size={22} /><p>Loading your vocabulary…</p></div>;
   }
 
   return (
@@ -335,7 +353,7 @@ export default function VocabApp() {
 
         <div className="sidebar-bottom">
           <button className="nav-item compact-row" onClick={toggleTheme}>{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}<span>{theme === "light" ? "Dark mode" : "Light mode"}</span></button>
-          <div className="profile-chip"><span className="avatar">G</span><div><strong>Guest learner</strong><small>{online ? "Synced with Supabase" : "Offline"}</small></div>{online ? <Wifi size={15} /> : <WifiOff size={15} />}</div>
+          <div className="profile-chip"><span className="avatar">{(user.user_metadata?.display_name || user.email || "U").slice(0, 1).toUpperCase()}</span><div><strong>{user.user_metadata?.display_name || user.email?.split("@")[0] || "Learner"}</strong><small>{user.email || (online ? "Synced with Supabase" : "Offline")}</small></div><button className="profile-signout" onClick={handleSignOut} title="Sign out"><LogOut size={15} /></button></div>
         </div>
       </aside>
 
@@ -346,6 +364,7 @@ export default function VocabApp() {
           <div className="topbar-actions">
             <span className={`sync-status ${online ? "online" : ""}`}>{syncing ? <Loader2 className="spin" size={14} /> : online ? <Check size={14} /> : <WifiOff size={14} />}{syncing ? "Syncing" : online ? "Live sync" : "Offline"}</span>
             <button className="icon-btn theme-mobile" onClick={toggleTheme}>{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button>
+            <button className="icon-btn account-logout" onClick={handleSignOut} title={`Sign out ${user.email ?? ""}`}><LogOut size={17} /></button>
             <button className="button primary" onClick={() => { setEditingWord(null); setWordModalOpen(true); }}><Plus size={17} /> Add word</button>
           </div>
         </header>
