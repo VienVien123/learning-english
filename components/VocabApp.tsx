@@ -1,0 +1,504 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  BookOpen, Brain, ChartNoAxesCombined, Check, ChevronDown, Flame, FolderOpen, Heart,
+  LayoutDashboard, Library, Loader2, Moon, MoreHorizontal, Pencil, Plus, Search, Sparkles,
+  Sun, Trash2, Volume2, Wifi, WifiOff, X, Zap
+} from "lucide-react";
+import type { User } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
+import type { Deck, ReviewRating, ViewName, Vocabulary } from "@/lib/types";
+import { getReviewUpdate, isDue, masteryLabel } from "@/lib/srs";
+import WordModal, { type WordDraft } from "./WordModal";
+import DeckModal, { type DeckDraft } from "./DeckModal";
+import FlashcardStudy from "./FlashcardStudy";
+
+const navItems: { id: ViewName; label: string; icon: React.ElementType }[] = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "words", label: "Vocabulary", icon: Library },
+  { id: "flashcards", label: "Flashcards", icon: Brain },
+  { id: "decks", label: "Decks", icon: FolderOpen },
+  { id: "stats", label: "Progress", icon: ChartNoAxesCombined },
+];
+
+function speak(text: string) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "en-US";
+  utterance.rate = 0.9;
+  window.speechSynthesis.speak(utterance);
+}
+
+function splitCsv(value: string) {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "New";
+  return new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(value));
+}
+
+export default function VocabApp() {
+  const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [view, setView] = useState<ViewName>("dashboard");
+  const [decks, setDecks] = useState<Deck[]>([]);
+  const [words, setWords] = useState<Vocabulary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [online, setOnline] = useState(true);
+  const [query, setQuery] = useState("");
+  const [deckFilter, setDeckFilter] = useState("all");
+  const [levelFilter, setLevelFilter] = useState("all");
+  const [wordModalOpen, setWordModalOpen] = useState(false);
+  const [deckModalOpen, setDeckModalOpen] = useState(false);
+  const [editingWord, setEditingWord] = useState<Vocabulary | null>(null);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [toast, setToast] = useState("");
+
+  const flashWords = useMemo(() => {
+    const inDeck = deckFilter === "all" ? words : words.filter((w) => w.deck_id === deckFilter);
+    const due = inDeck.filter(isDue);
+    return due.length ? due : inDeck.filter((w) => w.mastery_level < 5);
+  }, [words, deckFilter]);
+
+  const filteredWords = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return words.filter((word) => {
+      const searchMatch = !q || [word.word, word.meaning, word.example, ...(word.tags ?? [])]
+        .filter(Boolean).join(" ").toLowerCase().includes(q);
+      const deckMatch = deckFilter === "all" || word.deck_id === deckFilter;
+      const levelMatch = levelFilter === "all" || String(word.mastery_level) === levelFilter;
+      return searchMatch && deckMatch && levelMatch;
+    });
+  }, [words, query, deckFilter, levelFilter]);
+
+  const stats = useMemo(() => {
+    const total = words.length;
+    const mastered = words.filter((w) => w.mastery_level >= 5).length;
+    const due = words.filter(isDue).length;
+    const reviewed = words.reduce((sum, w) => sum + w.review_count, 0);
+    const correct = words.reduce((sum, w) => sum + w.correct_count, 0);
+    const wrong = words.reduce((sum, w) => sum + w.wrong_count, 0);
+    const accuracy = correct + wrong ? Math.round((correct / (correct + wrong)) * 100) : 0;
+    const mastery = total ? Math.round(words.reduce((sum, w) => sum + w.mastery_level, 0) / (total * 5) * 100) : 0;
+    return { total, mastered, due, reviewed, accuracy, mastery };
+  }, [words]);
+
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(""), 2500);
+  }, []);
+
+  const loadData = useCallback(async (uid: string, quiet = false) => {
+    if (!quiet) setLoading(true);
+    else setSyncing(true);
+    const [decksRes, wordsRes] = await Promise.all([
+      supabase.from("decks").select("*").eq("user_id", uid).order("created_at", { ascending: true }),
+      supabase.from("vocabularies").select("*").eq("user_id", uid).order("created_at", { ascending: false }),
+    ]);
+
+    if (decksRes.error) showToast(decksRes.error.message);
+    if (wordsRes.error) showToast(wordsRes.error.message);
+
+    let nextDecks = (decksRes.data ?? []) as Deck[];
+    if (!decksRes.error && nextDecks.length === 0) {
+      const { data } = await supabase.from("decks").insert({
+        user_id: uid,
+        name: "My Vocabulary",
+        description: "Your first vocabulary collection",
+        icon: "🌱",
+        color: "#6d5dfc",
+      }).select("*").single();
+      if (data) nextDecks = [data as Deck];
+    }
+
+    setDecks(nextDecks);
+    setWords((wordsRes.data ?? []) as Vocabulary[]);
+    setLoading(false);
+    setSyncing(false);
+  }, [showToast]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("lexibloom-theme") as "light" | "dark" | null;
+    const initial = saved ?? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    setTheme(initial);
+    document.documentElement.dataset.theme = initial;
+
+    setOnline(navigator.onLine);
+    const onOnline = () => setOnline(true);
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!mounted) return;
+      if (session?.user) {
+        setUser(session.user);
+        setAuthReady(true);
+        return;
+      }
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if (!mounted) return;
+      if (error) {
+        setAuthError(error.message);
+        setAuthReady(true);
+        setLoading(false);
+        return;
+      }
+      setUser(data.user);
+      setAuthReady(true);
+    })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) setUser(session.user);
+    });
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    loadData(user.id);
+
+    const channel = supabase
+      .channel(`lexibloom-${user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "decks", filter: `user_id=eq.${user.id}` }, () => loadData(user.id, true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "vocabularies", filter: `user_id=eq.${user.id}` }, () => loadData(user.id, true))
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user, loadData]);
+
+  function toggleTheme() {
+    const next = theme === "light" ? "dark" : "light";
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("lexibloom-theme", next);
+  }
+
+  async function saveWord(draft: WordDraft) {
+    if (!user) return;
+    const payload = {
+      user_id: user.id,
+      deck_id: draft.deck_id || null,
+      word: draft.word.trim(),
+      meaning: draft.meaning.trim(),
+      pronunciation: draft.pronunciation.trim() || null,
+      part_of_speech: draft.part_of_speech || null,
+      example: draft.example.trim() || null,
+      example_translation: draft.example_translation.trim() || null,
+      note: draft.note.trim() || null,
+      tags: splitCsv(draft.tags),
+      synonyms: splitCsv(draft.synonyms),
+      antonyms: splitCsv(draft.antonyms),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = editingWord
+      ? await supabase.from("vocabularies").update(payload).eq("id", editingWord.id).eq("user_id", user.id)
+      : await supabase.from("vocabularies").insert(payload);
+
+    if (error) throw new Error(error.message);
+    showToast(editingWord ? "Vocabulary updated" : "New word added");
+    setEditingWord(null);
+    await loadData(user.id, true);
+  }
+
+  async function createDeck(draft: DeckDraft) {
+    if (!user) return;
+    const { error } = await supabase.from("decks").insert({
+      user_id: user.id,
+      name: draft.name.trim(),
+      description: draft.description.trim() || null,
+      icon: draft.icon || "📚",
+      color: draft.color || "#6d5dfc",
+    });
+    if (error) throw new Error(error.message);
+    showToast("Deck created");
+    await loadData(user.id, true);
+  }
+
+  async function deleteWord(word: Vocabulary) {
+    if (!user || !window.confirm(`Delete “${word.word}”?`)) return;
+    const { error } = await supabase.from("vocabularies").delete().eq("id", word.id).eq("user_id", user.id);
+    if (error) showToast(error.message);
+    else {
+      setWords((prev) => prev.filter((w) => w.id !== word.id));
+      showToast("Word deleted");
+    }
+  }
+
+  async function deleteDeck(deck: Deck) {
+    if (!user || !window.confirm(`Delete deck “${deck.name}”? Words will stay, but move to “No deck”.`)) return;
+    const { error } = await supabase.from("decks").delete().eq("id", deck.id).eq("user_id", user.id);
+    if (error) showToast(error.message);
+    else {
+      if (deckFilter === deck.id) setDeckFilter("all");
+      showToast("Deck deleted");
+      await loadData(user.id, true);
+    }
+  }
+
+  async function toggleFavorite(word: Vocabulary) {
+    if (!user) return;
+    setWords((prev) => prev.map((w) => w.id === word.id ? { ...w, favorite: !w.favorite } : w));
+    const { error } = await supabase.from("vocabularies").update({ favorite: !word.favorite, updated_at: new Date().toISOString() }).eq("id", word.id).eq("user_id", user.id);
+    if (error) {
+      showToast(error.message);
+      await loadData(user.id, true);
+    }
+  }
+
+  async function reviewWord(word: Vocabulary, rating: ReviewRating) {
+    if (!user) return;
+    const update = getReviewUpdate(word, rating);
+    const patch = {
+      mastery_level: update.newLevel,
+      last_reviewed_at: update.lastReviewedAt,
+      next_review_at: update.nextReviewAt,
+      review_count: update.reviewCount,
+      correct_count: update.correctCount,
+      wrong_count: update.wrongCount,
+      updated_at: new Date().toISOString(),
+    };
+
+    setWords((prev) => prev.map((w) => w.id === word.id ? { ...w, ...patch } : w));
+    const { error } = await supabase.from("vocabularies").update(patch).eq("id", word.id).eq("user_id", user.id);
+    if (error) {
+      showToast(error.message);
+      await loadData(user.id, true);
+      return;
+    }
+    await supabase.from("review_history").insert({
+      user_id: user.id,
+      vocabulary_id: word.id,
+      rating,
+      previous_level: update.previousLevel,
+      new_level: update.newLevel,
+    });
+  }
+
+  if (!authReady || (loading && !authError)) {
+    return <div className="boot-screen"><div className="brand-mark"><BookOpen size={28} /></div><Loader2 className="spin" size={22} /><p>Preparing your vocabulary space…</p></div>;
+  }
+
+  if (authError) {
+    return (
+      <div className="setup-error">
+        <div className="brand-mark"><BookOpen size={28} /></div>
+        <h1>One Supabase setting is still missing</h1>
+        <p>The app could not create an anonymous user.</p>
+        <code>{authError}</code>
+        <div className="setup-steps">
+          <strong>Open Supabase → Authentication → Sign In / Providers → Anonymous</strong>
+          <span>Enable anonymous sign-ins, save, then refresh this page.</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <button className="logo" onClick={() => setView("dashboard")}>
+          <span className="logo-icon"><BookOpen size={21} /></span>
+          <span><strong>LexiBloom</strong><small>Learn a little every day</small></span>
+        </button>
+
+        <nav>
+          <div className="nav-label">LEARN</div>
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return <button key={item.id} className={`nav-item ${view === item.id ? "active" : ""}`} onClick={() => setView(item.id)}><Icon size={19} /><span>{item.label}</span>{item.id === "flashcards" && stats.due > 0 && <b>{stats.due}</b>}</button>;
+          })}
+        </nav>
+
+        <div className="sidebar-card">
+          <div className="sidebar-card-icon"><Flame size={18} /></div>
+          <div><strong>Keep the rhythm</strong><p>{stats.due ? `${stats.due} cards are ready to review.` : "You're caught up for now."}</p></div>
+          <button onClick={() => setView("flashcards")}>Study now</button>
+        </div>
+
+        <div className="sidebar-bottom">
+          <button className="nav-item compact-row" onClick={toggleTheme}>{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}<span>{theme === "light" ? "Dark mode" : "Light mode"}</span></button>
+          <div className="profile-chip"><span className="avatar">G</span><div><strong>Guest learner</strong><small>{online ? "Synced with Supabase" : "Offline"}</small></div>{online ? <Wifi size={15} /> : <WifiOff size={15} />}</div>
+        </div>
+      </aside>
+
+      <main className="main-panel">
+        <header className="topbar">
+          <div className="mobile-brand"><span className="logo-icon"><BookOpen size={18} /></span><strong>LexiBloom</strong></div>
+          <div className="global-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search your vocabulary..." onFocus={() => setView("words")} /><kbd>⌘ K</kbd></div>
+          <div className="topbar-actions">
+            <span className={`sync-status ${online ? "online" : ""}`}>{syncing ? <Loader2 className="spin" size={14} /> : online ? <Check size={14} /> : <WifiOff size={14} />}{syncing ? "Syncing" : online ? "Live sync" : "Offline"}</span>
+            <button className="icon-btn theme-mobile" onClick={toggleTheme}>{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button>
+            <button className="button primary" onClick={() => { setEditingWord(null); setWordModalOpen(true); }}><Plus size={17} /> Add word</button>
+          </div>
+        </header>
+
+        <section className="content">
+          {view === "dashboard" && <Dashboard words={words} decks={decks} stats={stats} setView={setView} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
+          {view === "words" && <VocabularyView words={filteredWords} decks={decks} query={query} setQuery={setQuery} deckFilter={deckFilter} setDeckFilter={setDeckFilter} levelFilter={levelFilter} setLevelFilter={setLevelFilter} onEdit={(w) => { setEditingWord(w); setWordModalOpen(true); }} onDelete={deleteWord} onFavorite={toggleFavorite} />}
+          {view === "flashcards" && (
+            <div>
+              <PageHeader eyebrow="FOCUS MODE" title="Flashcard session" subtitle="Active recall + spaced repetition. Rate the card after revealing the answer." action={<select className="clean-select" value={deckFilter} onChange={(e) => setDeckFilter(e.target.value)}><option value="all">All decks</option>{decks.map((d) => <option key={d.id} value={d.id}>{d.icon} {d.name}</option>)}</select>} />
+              <FlashcardStudy words={flashWords} onReview={reviewWord} />
+            </div>
+          )}
+          {view === "decks" && <DecksView decks={decks} words={words} onAdd={() => setDeckModalOpen(true)} onDelete={deleteDeck} onOpen={(id) => { setDeckFilter(id); setView("words"); }} />}
+          {view === "stats" && <StatsView words={words} decks={decks} stats={stats} />}
+        </section>
+      </main>
+
+      <nav className="mobile-nav">
+        {navItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><Icon size={20} /><span>{item.label === "Vocabulary" ? "Words" : item.label}</span></button>; })}
+      </nav>
+
+      <WordModal open={wordModalOpen} decks={decks} initial={editingWord} onClose={() => { setWordModalOpen(false); setEditingWord(null); }} onSave={saveWord} />
+      <DeckModal open={deckModalOpen} onClose={() => setDeckModalOpen(false)} onSave={createDeck} />
+      {toast && <div className="toast"><Check size={16} /> {toast}</div>}
+    </div>
+  );
+}
+
+function PageHeader({ eyebrow, title, subtitle, action }: { eyebrow: string; title: string; subtitle: string; action?: React.ReactNode }) {
+  return <div className="page-header"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{subtitle}</p></div>{action}</div>;
+}
+
+function Dashboard({ words, decks, stats, setView, openAdd }: { words: Vocabulary[]; decks: Deck[]; stats: { total: number; mastered: number; due: number; reviewed: number; accuracy: number; mastery: number }; setView: (v: ViewName) => void; openAdd: () => void }) {
+  const recent = words.slice(0, 5);
+  const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
+  return (
+    <>
+      <div className="hero-row">
+        <div>
+          <div className="eyebrow"><Sparkles size={14} /> YOUR LEARNING SPACE</div>
+          <h1>{greeting} 👋</h1>
+          <p>Small reviews, repeated often, turn new words into long-term memory.</p>
+        </div>
+        <button className="button primary large" onClick={() => setView("flashcards")}><Brain size={19} /> Start review <span>{stats.due}</span></button>
+      </div>
+
+      <div className="stat-grid">
+        <StatCard icon={<Library size={20} />} label="Total words" value={stats.total} hint={`${decks.length} decks`} tone="violet" />
+        <StatCard icon={<Brain size={20} />} label="Due today" value={stats.due} hint="ready to review" tone="orange" />
+        <StatCard icon={<Zap size={20} />} label="Mastery" value={`${stats.mastery}%`} hint={`${stats.mastered} mastered`} tone="teal" />
+        <StatCard icon={<ChartNoAxesCombined size={20} />} label="Accuracy" value={`${stats.accuracy}%`} hint={`${stats.reviewed} reviews`} tone="blue" />
+      </div>
+
+      <div className="dashboard-grid">
+        <section className="panel focus-panel">
+          <div className="panel-title"><div><span>Today&apos;s focus</span><h2>Build your memory loop</h2></div><button className="text-button" onClick={() => setView("flashcards")}>Open session →</button></div>
+          <div className="focus-content">
+            <div className="mastery-ring" style={{ "--progress": `${Math.max(2, stats.mastery)}%` } as React.CSSProperties}><div><strong>{stats.mastery}%</strong><span>mastery</span></div></div>
+            <div className="focus-copy"><h3>{stats.due ? `${stats.due} cards are waiting for you` : "Your reviews are complete"}</h3><p>{stats.due ? "A short focused session now is better than a long session later." : "Add a few fresh words, or explore a deck you want to strengthen."}</p><div className="focus-actions"><button className="button primary" onClick={() => setView("flashcards")}><Brain size={17} /> Review now</button><button className="button secondary" onClick={openAdd}><Plus size={17} /> New word</button></div></div>
+          </div>
+        </section>
+
+        <section className="panel streak-panel">
+          <div className="panel-title"><div><span>Weekly rhythm</span><h2>Consistency</h2></div><div className="round-badge"><Flame size={18} /></div></div>
+          <div className="week-row">{["M", "T", "W", "T", "F", "S", "S"].map((day, i) => <div key={i} className={i < 4 ? "done" : i === 4 ? "today" : ""}><span>{day}</span><b>{i < 4 ? <Check size={14} /> : i === 4 ? "•" : ""}</b></div>)}</div>
+          <p className="streak-copy"><strong>4 day rhythm</strong><br />Keep sessions short and repeat often.</p>
+        </section>
+      </div>
+
+      <section className="panel recent-panel">
+        <div className="panel-title"><div><span>Recently added</span><h2>Your newest vocabulary</h2></div><button className="text-button" onClick={() => setView("words")}>View all →</button></div>
+        {recent.length ? <div className="recent-list">{recent.map((word) => <div className="recent-item" key={word.id}><div className="word-orb">{word.word.slice(0, 1).toUpperCase()}</div><div className="recent-word"><strong>{word.word}</strong><span>{word.pronunciation || word.part_of_speech || "Vocabulary"}</span></div><div className="recent-meaning">{word.meaning}</div><span className={`level-pill level-${word.mastery_level}`}>{masteryLabel(word.mastery_level)}</span></div>)}</div> : <EmptyWords openAdd={openAdd} />}
+      </section>
+    </>
+  );
+}
+
+function StatCard({ icon, label, value, hint, tone }: { icon: React.ReactNode; label: string; value: string | number; hint: string; tone: string }) {
+  return <div className="stat-card"><div className={`stat-icon ${tone}`}>{icon}</div><div><span>{label}</span><strong>{value}</strong><small>{hint}</small></div></div>;
+}
+
+function EmptyWords({ openAdd }: { openAdd: () => void }) {
+  return <div className="empty-inline"><div className="empty-icon"><BookOpen size={24} /></div><div><strong>Your vocabulary library is empty</strong><p>Add your first word and LexiBloom will schedule it for review.</p></div><button className="button primary" onClick={openAdd}><Plus size={16} /> Add first word</button></div>;
+}
+
+function VocabularyView({ words, decks, query, setQuery, deckFilter, setDeckFilter, levelFilter, setLevelFilter, onEdit, onDelete, onFavorite }: {
+  words: Vocabulary[]; decks: Deck[]; query: string; setQuery: (s: string) => void; deckFilter: string; setDeckFilter: (s: string) => void; levelFilter: string; setLevelFilter: (s: string) => void; onEdit: (w: Vocabulary) => void; onDelete: (w: Vocabulary) => void; onFavorite: (w: Vocabulary) => void;
+}) {
+  return (
+    <>
+      <PageHeader eyebrow="YOUR LIBRARY" title="Vocabulary" subtitle="Search, organize and refine every word you are learning." />
+      <div className="filterbar">
+        <div className="search-wide"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search word, meaning, example or tag..." />{query && <button onClick={() => setQuery("")}><X size={16} /></button>}</div>
+        <label className="select-wrap"><FolderOpen size={16} /><select value={deckFilter} onChange={(e) => setDeckFilter(e.target.value)}><option value="all">All decks</option>{decks.map((d) => <option key={d.id} value={d.id}>{d.icon} {d.name}</option>)}</select><ChevronDown size={15} /></label>
+        <label className="select-wrap"><Zap size={16} /><select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)}><option value="all">All levels</option>{[0,1,2,3,4,5].map((l) => <option key={l} value={l}>{masteryLabel(l)}</option>)}</select><ChevronDown size={15} /></label>
+      </div>
+
+      <div className="table-card">
+        <div className="table-head"><span>Word</span><span>Meaning</span><span>Deck</span><span>Mastery</span><span>Next review</span><span></span></div>
+        {words.length ? words.map((word) => {
+          const deck = decks.find((d) => d.id === word.deck_id);
+          return <div className="table-row" key={word.id}>
+            <div className="word-cell"><button className={`heart-btn ${word.favorite ? "active" : ""}`} onClick={() => onFavorite(word)}><Heart size={16} fill={word.favorite ? "currentColor" : "none"} /></button><div><strong>{word.word}</strong><span>{word.pronunciation || word.part_of_speech || ""}</span></div><button className="sound-mini" onClick={() => speak(word.word)}><Volume2 size={15} /></button></div>
+            <div className="meaning-cell"><strong>{word.meaning}</strong>{word.example && <span>{word.example}</span>}</div>
+            <div>{deck ? <span className="deck-chip" style={{ "--deck-color": deck.color } as React.CSSProperties}><i /> {deck.icon} {deck.name}</span> : <span className="muted">No deck</span>}</div>
+            <div><span className={`level-pill level-${word.mastery_level}`}>{masteryLabel(word.mastery_level)}</span></div>
+            <div><span className="date-cell">{word.next_review_at ? formatDate(word.next_review_at) : "Now"}</span></div>
+            <div className="row-actions"><button onClick={() => onEdit(word)} title="Edit"><Pencil size={16} /></button><button className="danger" onClick={() => onDelete(word)} title="Delete"><Trash2 size={16} /></button></div>
+          </div>;
+        }) : <div className="empty-table"><Search size={26} /><strong>No vocabulary found</strong><span>Try another search or filter.</span></div>}
+      </div>
+      <div className="result-count">Showing <strong>{words.length}</strong> words</div>
+    </>
+  );
+}
+
+function DecksView({ decks, words, onAdd, onDelete, onOpen }: { decks: Deck[]; words: Vocabulary[]; onAdd: () => void; onDelete: (d: Deck) => void; onOpen: (id: string) => void }) {
+  return <>
+    <PageHeader eyebrow="COLLECTIONS" title="Your decks" subtitle="Organize vocabulary by exam, topic, class or personal goal." action={<button className="button primary" onClick={onAdd}><Plus size={17} /> New deck</button>} />
+    <div className="deck-grid">
+      {decks.map((deck) => {
+        const deckWords = words.filter((w) => w.deck_id === deck.id);
+        const mastered = deckWords.filter((w) => w.mastery_level >= 5).length;
+        const progress = deckWords.length ? Math.round(mastered / deckWords.length * 100) : 0;
+        return <article className="deck-card" key={deck.id} onClick={() => onOpen(deck.id)}>
+          <div className="deck-accent" style={{ background: deck.color }} />
+          <div className="deck-top"><div className="deck-icon" style={{ background: `${deck.color}18`, color: deck.color }}>{deck.icon}</div><button className="more-btn" onClick={(e) => { e.stopPropagation(); onDelete(deck); }} title="Delete deck"><Trash2 size={16} /></button></div>
+          <h3>{deck.name}</h3><p>{deck.description || "A focused collection for your vocabulary."}</p>
+          <div className="deck-meta"><span><strong>{deckWords.length}</strong> words</span><span><strong>{mastered}</strong> mastered</span></div>
+          <div className="deck-progress"><span style={{ width: `${progress}%`, background: deck.color }} /></div>
+          <div className="deck-footer"><span>{progress}% complete</span><span>Open deck →</span></div>
+        </article>;
+      })}
+      <button className="deck-card add-deck" onClick={onAdd}><div className="add-circle"><Plus size={24} /></div><strong>Create a new deck</strong><span>Build a collection around your next learning goal.</span></button>
+    </div>
+  </>;
+}
+
+function StatsView({ words, decks, stats }: { words: Vocabulary[]; decks: Deck[]; stats: { total: number; mastered: number; due: number; reviewed: number; accuracy: number; mastery: number } }) {
+  const levels = [0, 1, 2, 3, 4, 5].map((level) => ({ level, count: words.filter((w) => w.mastery_level === level).length }));
+  const max = Math.max(1, ...levels.map((x) => x.count));
+  return <>
+    <PageHeader eyebrow="INSIGHTS" title="Learning progress" subtitle="See how your vocabulary is moving from new to mastered." />
+    <div className="stat-grid">
+      <StatCard icon={<Library size={20} />} label="Vocabulary" value={stats.total} hint="all saved words" tone="violet" />
+      <StatCard icon={<Check size={20} />} label="Mastered" value={stats.mastered} hint="level 5 words" tone="teal" />
+      <StatCard icon={<Brain size={20} />} label="Reviews" value={stats.reviewed} hint="all-time attempts" tone="orange" />
+      <StatCard icon={<Zap size={20} />} label="Accuracy" value={`${stats.accuracy}%`} hint="good/hard/easy" tone="blue" />
+    </div>
+    <div className="stats-layout">
+      <section className="panel chart-panel"><div className="panel-title"><div><span>Mastery distribution</span><h2>Where your words are now</h2></div></div><div className="bar-chart">{levels.map(({ level, count }) => <div className="bar-item" key={level}><div className="bar-value">{count}</div><div className="bar-track"><span style={{ height: `${Math.max(5, count / max * 100)}%` }} /></div><div className="bar-label">{masteryLabel(level)}</div></div>)}</div></section>
+      <section className="panel"><div className="panel-title"><div><span>Deck overview</span><h2>Collections</h2></div></div><div className="deck-stats-list">{decks.map((deck) => { const c = words.filter((w) => w.deck_id === deck.id).length; const m = words.filter((w) => w.deck_id === deck.id && w.mastery_level >= 5).length; const pct = c ? Math.round(m / c * 100) : 0; return <div key={deck.id}><div className="deck-stat-title"><span>{deck.icon} {deck.name}</span><strong>{pct}%</strong></div><div className="mini-progress"><span style={{ width: `${pct}%`, background: deck.color }} /></div><small>{m} of {c} mastered</small></div>; })}</div></section>
+    </div>
+  </>;
+}
