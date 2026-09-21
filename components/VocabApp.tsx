@@ -4,23 +4,27 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BookOpen, Brain, ChartNoAxesCombined, Check, ChevronDown, Flame, FolderOpen, Heart,
   LayoutDashboard, Library, Loader2, Moon, MoreHorizontal, Pencil, Plus, Search, Sparkles,
-  Sun, Trash2, Volume2, Wifi, WifiOff, X, Zap, LogOut
+  Sun, Trash2, Volume2, Wifi, WifiOff, X, Zap, LogOut, Gamepad2, Trophy
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import type { Deck, ReviewRating, ViewName, Vocabulary } from "@/lib/types";
+import type { Deck, ReviewRating, UserProgress, ViewName, Vocabulary } from "@/lib/types";
 import { getReviewUpdate, isDue, masteryLabel } from "@/lib/srs";
+import { DAILY_GOAL, effectiveDailyAnswers, effectiveStreak, emptyProgress, getWeakWords, levelInfo, localDateKey } from "@/lib/gamification";
 import WordModal, { type WordDraft } from "./WordModal";
 import DeckModal, { type DeckDraft } from "./DeckModal";
 import FlashcardStudy from "./FlashcardStudy";
 import AuthScreen from "./AuthScreen";
+import GamesView, { AchievementsView } from "./GamesView";
 
 const navItems: { id: ViewName; label: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "words", label: "Vocabulary", icon: Library },
   { id: "flashcards", label: "Flashcards", icon: Brain },
+  { id: "games", label: "Games", icon: Gamepad2 },
   { id: "decks", label: "Decks", icon: FolderOpen },
   { id: "stats", label: "Progress", icon: ChartNoAxesCombined },
+  { id: "achievements", label: "Achievements", icon: Trophy },
 ];
 
 function speak(text: string) {
@@ -47,6 +51,7 @@ export default function VocabApp() {
   const [view, setView] = useState<ViewName>("dashboard");
   const [decks, setDecks] = useState<Deck[]>([]);
   const [words, setWords] = useState<Vocabulary[]>([]);
+  const [progress, setProgress] = useState<UserProgress>(() => emptyProgress());
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [online, setOnline] = useState(true);
@@ -77,6 +82,8 @@ export default function VocabApp() {
     });
   }, [words, query, deckFilter, levelFilter]);
 
+  const weakWords = useMemo(() => getWeakWords(words), [words]);
+
   const stats = useMemo(() => {
     const total = words.length;
     const mastered = words.filter((w) => w.mastery_level >= 5).length;
@@ -97,13 +104,15 @@ export default function VocabApp() {
   const loadData = useCallback(async (uid: string, quiet = false) => {
     if (!quiet) setLoading(true);
     else setSyncing(true);
-    const [decksRes, wordsRes] = await Promise.all([
+    const [decksRes, wordsRes, progressRes] = await Promise.all([
       supabase.from("decks").select("*").eq("user_id", uid).order("created_at", { ascending: true }),
       supabase.from("vocabularies").select("*").eq("user_id", uid).order("created_at", { ascending: false }),
+      supabase.from("user_progress").select("*").eq("user_id", uid).maybeSingle(),
     ]);
 
     if (decksRes.error) showToast(decksRes.error.message);
     if (wordsRes.error) showToast(wordsRes.error.message);
+    if (progressRes.error && !String(progressRes.error.message).includes("user_progress")) showToast(progressRes.error.message);
 
     let nextDecks = (decksRes.data ?? []) as Deck[];
     if (!decksRes.error && nextDecks.length === 0) {
@@ -119,6 +128,15 @@ export default function VocabApp() {
 
     setDecks(nextDecks);
     setWords((wordsRes.data ?? []) as Vocabulary[]);
+
+    if (progressRes.data) {
+      setProgress(progressRes.data as UserProgress);
+    } else if (!progressRes.error) {
+      const { data } = await supabase.from("user_progress").insert({ user_id: uid }).select("*").single();
+      setProgress((data as UserProgress | null) ?? emptyProgress(uid));
+    } else {
+      setProgress(emptyProgress(uid));
+    }
     setLoading(false);
     setSyncing(false);
   }, [showToast]);
@@ -158,6 +176,7 @@ export default function VocabApp() {
       if (!session?.user) {
         setDecks([]);
         setWords([]);
+        setProgress(emptyProgress());
         setLoading(false);
       }
       if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
@@ -283,6 +302,7 @@ export default function VocabApp() {
       .channel(`lexibloom-${user.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "decks", filter: `user_id=eq.${user.id}` }, () => loadData(user.id, true))
       .on("postgres_changes", { event: "*", schema: "public", table: "vocabularies", filter: `user_id=eq.${user.id}` }, () => loadData(user.id, true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_progress", filter: `user_id=eq.${user.id}` }, () => loadData(user.id, true))
       .subscribe();
 
     return () => {
@@ -371,6 +391,26 @@ export default function VocabApp() {
     }
   }
 
+  async function recordActivity(xp: number, correct: boolean, isGame = false) {
+    if (!user) return;
+
+    const { data, error } = await supabase.rpc("record_learning_activity", {
+      p_xp: Math.max(0, Math.round(xp)),
+      p_correct: correct,
+      p_is_game: isGame,
+      p_local_date: localDateKey(),
+    });
+
+    if (error) {
+      // Games still work if the migration has not been run yet; only persistence is skipped.
+      console.warn("Gamification progress could not be saved:", error.message);
+      return;
+    }
+
+    const next = Array.isArray(data) ? data[0] : data;
+    if (next) setProgress(next as UserProgress);
+  }
+
   async function reviewWord(word: Vocabulary, rating: ReviewRating) {
     if (!user) return;
     const update = getReviewUpdate(word, rating);
@@ -398,6 +438,9 @@ export default function VocabApp() {
       previous_level: update.previousLevel,
       new_level: update.newLevel,
     });
+
+    const reviewXp = rating === 0 ? 2 : rating === 1 ? 5 : rating === 2 ? 8 : 10;
+    await recordActivity(reviewXp, rating !== 0, false);
   }
 
   async function prepareGuestMigration(nextMode: "login" | "register", prefillEmail?: string) {
@@ -481,8 +524,8 @@ export default function VocabApp() {
 
         <div className="sidebar-card">
           <div className="sidebar-card-icon"><Flame size={18} /></div>
-          <div><strong>Keep the rhythm</strong><p>{stats.due ? `${stats.due} cards are ready to review.` : "You're caught up for now."}</p></div>
-          <button onClick={() => setView("flashcards")}>Study now</button>
+          <div><strong>{effectiveStreak(progress)} day streak · {progress.total_xp} XP</strong><p>{stats.due ? `${stats.due} cards are ready to review.` : "Try a quick vocabulary game."}</p></div>
+          <button onClick={() => setView(stats.due ? "flashcards" : "games")}>{stats.due ? "Study now" : "Play game"}</button>
         </div>
 
         <div className="sidebar-bottom">
@@ -504,7 +547,7 @@ export default function VocabApp() {
         </header>
 
         <section className="content">
-          {view === "dashboard" && <Dashboard words={words} decks={decks} stats={stats} setView={setView} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
+          {view === "dashboard" && <Dashboard words={words} decks={decks} stats={stats} progress={progress} weakWords={weakWords} setView={setView} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
           {view === "words" && <VocabularyView words={filteredWords} decks={decks} query={query} setQuery={setQuery} deckFilter={deckFilter} setDeckFilter={setDeckFilter} levelFilter={levelFilter} setLevelFilter={setLevelFilter} onEdit={(w) => { setEditingWord(w); setWordModalOpen(true); }} onDelete={deleteWord} onFavorite={toggleFavorite} />}
           {view === "flashcards" && (
             <div>
@@ -512,8 +555,10 @@ export default function VocabApp() {
               <FlashcardStudy words={flashWords} onReview={reviewWord} />
             </div>
           )}
+          {view === "games" && <GamesView words={words} progress={progress} onActivity={recordActivity} />}
           {view === "decks" && <DecksView decks={decks} words={words} onAdd={() => setDeckModalOpen(true)} onDelete={deleteDeck} onOpen={(id) => { setDeckFilter(id); setView("words"); }} />}
           {view === "stats" && <StatsView words={words} decks={decks} stats={stats} />}
+          {view === "achievements" && <AchievementsView words={words} progress={progress} />}
         </section>
       </main>
 
@@ -532,7 +577,7 @@ function PageHeader({ eyebrow, title, subtitle, action }: { eyebrow: string; tit
   return <div className="page-header"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{subtitle}</p></div>{action}</div>;
 }
 
-function Dashboard({ words, decks, stats, setView, openAdd }: { words: Vocabulary[]; decks: Deck[]; stats: { total: number; mastered: number; due: number; reviewed: number; accuracy: number; mastery: number }; setView: (v: ViewName) => void; openAdd: () => void }) {
+function Dashboard({ words, decks, stats, progress, weakWords, setView, openAdd }: { words: Vocabulary[]; decks: Deck[]; stats: { total: number; mastered: number; due: number; reviewed: number; accuracy: number; mastery: number }; progress: UserProgress; weakWords: Vocabulary[]; setView: (v: ViewName) => void; openAdd: () => void }) {
   const recent = words.slice(0, 5);
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
   return (
@@ -553,6 +598,8 @@ function Dashboard({ words, decks, stats, setView, openAdd }: { words: Vocabular
         <StatCard icon={<ChartNoAxesCombined size={20} />} label="Accuracy" value={`${stats.accuracy}%`} hint={`${stats.reviewed} reviews`} tone="blue" />
       </div>
 
+      <GamificationDashboard progress={progress} weakWords={weakWords} setView={setView} />
+
       <div className="dashboard-grid">
         <section className="panel focus-panel">
           <div className="panel-title"><div><span>Today&apos;s focus</span><h2>Build your memory loop</h2></div><button className="text-button" onClick={() => setView("flashcards")}>Open session →</button></div>
@@ -563,9 +610,9 @@ function Dashboard({ words, decks, stats, setView, openAdd }: { words: Vocabular
         </section>
 
         <section className="panel streak-panel">
-          <div className="panel-title"><div><span>Weekly rhythm</span><h2>Consistency</h2></div><div className="round-badge"><Flame size={18} /></div></div>
-          <div className="week-row">{["M", "T", "W", "T", "F", "S", "S"].map((day, i) => <div key={i} className={i < 4 ? "done" : i === 4 ? "today" : ""}><span>{day}</span><b>{i < 4 ? <Check size={14} /> : i === 4 ? "•" : ""}</b></div>)}</div>
-          <p className="streak-copy"><strong>4 day rhythm</strong><br />Keep sessions short and repeat often.</p>
+          <div className="panel-title"><div><span>Learning streak</span><h2>Consistency</h2></div><div className="round-badge"><Flame size={18} /></div></div>
+          <div className="streak-live"><div><strong>{effectiveStreak(progress)}</strong><span>current days</span></div><div><strong>{progress.best_streak}</strong><span>best streak</span></div></div>
+          <p className="streak-copy"><strong>{effectiveDailyAnswers(progress) >= DAILY_GOAL ? "Daily challenge complete 🎉" : `${Math.max(0, DAILY_GOAL - effectiveDailyAnswers(progress))} answers left today`}</strong><br />A quick game or review keeps your rhythm alive.</p>
         </section>
       </div>
 
@@ -575,6 +622,30 @@ function Dashboard({ words, decks, stats, setView, openAdd }: { words: Vocabular
       </section>
     </>
   );
+}
+
+
+function GamificationDashboard({ progress, weakWords, setView }: { progress: UserProgress; weakWords: Vocabulary[]; setView: (v: ViewName) => void }) {
+  const level = levelInfo(progress.total_xp);
+  const streak = effectiveStreak(progress);
+  const daily = effectiveDailyAnswers(progress);
+  const dailyPct = Math.min(100, Math.round(daily / DAILY_GOAL * 100));
+
+  return <div className="gamification-dashboard">
+    <section className="panel xp-panel">
+      <div className="xp-main"><div className="xp-level"><Trophy size={21} /><span>LV</span><strong>{level.level}</strong></div><div><span className="mini-label">YOUR LEVEL</span><h3>{progress.total_xp.toLocaleString()} XP</h3><p>{level.currentXp} / {level.neededXp} XP toward level {level.level + 1}</p></div></div>
+      <div className="xp-progress"><span style={{ width: `${level.percent}%` }} /></div>
+      <button className="text-button" onClick={() => setView("games")}>Earn XP in Games →</button>
+    </section>
+    <section className="panel daily-panel">
+      <div className="daily-ring" style={{ "--daily": `${Math.max(2, dailyPct)}%` } as React.CSSProperties}><div><Flame size={19} /><strong>{streak}</strong><span>day streak</span></div></div>
+      <div><span className="mini-label">DAILY CHALLENGE</span><h3>{Math.min(daily, DAILY_GOAL)} / {DAILY_GOAL} answers</h3><p>Mix flashcards and games to complete today&apos;s goal.</p><button className="text-button" onClick={() => setView("games")}>Continue challenge →</button></div>
+    </section>
+    <section className="panel weak-panel">
+      <div className="panel-title compact"><div><span>Smart practice</span><h2>Weak words</h2></div><button className="text-button" onClick={() => setView("games")}>Practice →</button></div>
+      {weakWords.length ? <div className="weak-list">{weakWords.slice(0, 4).map((word) => <div key={word.id}><span>{word.word.slice(0, 1).toUpperCase()}</span><div><strong>{word.word}</strong><small>{word.meaning}</small></div><b>{word.wrong_count} misses</b></div>)}</div> : <div className="weak-empty"><Check size={18} /><span>No weak words yet. Keep practicing!</span></div>}
+    </section>
+  </div>;
 }
 
 function StatCard({ icon, label, value, hint, tone }: { icon: React.ReactNode; label: string; value: string | number; hint: string; tone: string }) {

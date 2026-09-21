@@ -37,4 +37,18 @@ export type Vocabulary = {
 
 export type ReviewRating = 0 | 1 | 2 | 3;
 
-export type ViewName = "dashboard" | "words" | "flashcards" | "decks" | "stats";
+export type UserProgress = {
+  user_id: string;
+  total_xp: number;
+  current_streak: number;
+  best_streak: number;
+  last_active_date: string | null;
+  daily_date: string | null;
+  daily_answers: number;
+  daily_correct: number;
+  game_answers: number;
+  game_correct: number;
+  updated_at: string;
+};
+
+export type ViewName = "dashboard" | "words" | "flashcards" | "games" | "decks" | "stats" | "achievements";
