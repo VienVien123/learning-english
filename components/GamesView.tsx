@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { UserProgress, Vocabulary } from "@/lib/types";
 import { DAILY_GOAL, effectiveDailyAnswers, effectiveStreak, gameAccuracy, levelInfo } from "@/lib/gamification";
+import { speakEnglish } from "@/lib/speech";
 
 type GameId = "quiz" | "typing" | "listening" | "match" | "speed";
 type AwardFn = (xp: number, correct: boolean) => void | Promise<void>;
@@ -32,14 +33,6 @@ function sample<T>(items: T[], count: number) {
   return shuffle(items).slice(0, Math.min(count, items.length));
 }
 
-function speak(text: string) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "en-US";
-  utterance.rate = 0.86;
-  window.speechSynthesis.speak(utterance);
-}
 
 function normalize(value: string) {
   return value.trim().toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ");
@@ -144,12 +137,13 @@ function QuizGame({ words, award }: { words: Vocabulary[]; award: AwardFn }) {
   if (!round) return <GameEmpty />;
   const answered = picked !== null;
   return <div className="game-stage">
-    <div className="game-prompt"><span>Choose the meaning</span><h2>{round.target.word}</h2><p>{round.target.pronunciation || round.target.part_of_speech || "What does this word mean?"}</p></div>
+    <div className="game-prompt"><span>Choose the meaning</span><div className="prompt-word-with-audio"><h2>{round.target.word}</h2><button className="word-audio-btn" type="button" onClick={() => speakEnglish(round.target.word)} aria-label={`Listen to ${round.target.word}`} title="Listen"><Volume2 size={19} /></button></div><p>{round.target.pronunciation || round.target.part_of_speech || "What does this word mean?"}</p></div>
     <div className="quiz-options">{round.options.map((option) => {
       const correct = option.id === round.target.id;
       const state = answered ? correct ? "correct" : picked === option.id ? "wrong" : "" : "";
-      return <button key={option.id} disabled={answered} className={state} onClick={() => { setPicked(option.id); void award(10, correct); }}><span>{option.meaning}</span>{answered && correct && <Check size={18} />}{answered && picked === option.id && !correct && <X size={18} />}</button>;
+      return <button key={option.id} disabled={answered} className={state} onClick={() => { setPicked(option.id); speakEnglish(round.target.word); void award(10, correct); }}><span>{option.meaning}</span>{answered && correct && <Check size={18} />}{answered && picked === option.id && !correct && <X size={18} />}</button>;
     })}</div>
+    {answered && <div className="answered-word-audio"><span>{round.target.word}</span><button type="button" onClick={() => speakEnglish(round.target.word)} aria-label={`Listen to ${round.target.word}`}><Volume2 size={17} /> Listen again</button></div>}
     {answered && <button className="button primary game-next" onClick={() => { setPicked(null); setSeed((v) => v + 1); }}>Next word →</button>}
   </div>;
 }
@@ -162,7 +156,7 @@ function TypingGame({ words, award, listening }: { words: Vocabulary[]; award: A
 
   useEffect(() => {
     if (listening && target) {
-      const id = window.setTimeout(() => speak(target.word), 250);
+      const id = window.setTimeout(() => speakEnglish(target.word), 250);
       return () => window.clearTimeout(id);
     }
   }, [listening, target]);
@@ -172,15 +166,16 @@ function TypingGame({ words, award, listening }: { words: Vocabulary[]; award: A
     if (!value.trim() || result) return;
     const correct = normalize(value) === normalize(target.word);
     setResult(correct ? "correct" : "wrong");
+    speakEnglish(target.word);
     void award(15, correct);
   }
   return <div className="game-stage typing-stage">
     <div className="game-prompt">
       <span>{listening ? "Listen carefully" : "Type the English word"}</span>
-      {listening ? <button className="listen-orb" onClick={() => speak(target.word)}><Volume2 size={34} /></button> : <><h2 className="meaning-prompt">{target.meaning}</h2><p>{target.part_of_speech || "Recall the word from memory"}</p></>}
+      {listening ? <button className="listen-orb" onClick={() => speakEnglish(target.word)}><Volume2 size={34} /></button> : <><h2 className="meaning-prompt">{target.meaning}</h2><p>{target.part_of_speech || "Recall the word from memory"}</p></>}
     </div>
     <div className={`typing-answer ${result ?? ""}`}><input autoFocus value={value} disabled={!!result} placeholder={listening ? "Type what you hear..." : "Type the English word..."} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} /><button onClick={submit} disabled={!value.trim() || !!result}>Check</button></div>
-    {result && <div className={`answer-feedback ${result}`}><strong>{result === "correct" ? "Nice!" : `Answer: ${target.word}`}</strong><span>{target.meaning}</span></div>}
+    {result && <div className={`answer-feedback ${result}`}><div><strong>{result === "correct" ? `Nice! ${target.word}` : `Answer: ${target.word}`}</strong><span>{target.meaning}</span></div><button className="feedback-audio-btn" type="button" onClick={() => speakEnglish(target.word)} aria-label={`Listen to ${target.word}`} title="Listen again"><Volume2 size={17} /></button></div>}
     {result && <button className="button primary game-next" onClick={() => { setValue(""); setResult(null); setSeed((v) => v + 1); }}>Next →</button>}
   </div>;
 }
@@ -198,6 +193,8 @@ function MatchGame({ words, award }: { words: Vocabulary[]; award: AwardFn }) {
   const done = matched.length === pairs.length;
   function chooseMeaning(id: string) {
     if (!selectedWord || matched.includes(id)) return;
+    const selectedVocabulary = pairs.find((word) => word.id === selectedWord);
+    if (selectedVocabulary) speakEnglish(selectedVocabulary.word);
     const correct = selectedWord === id;
     void award(8, correct);
     if (correct) {
@@ -212,7 +209,7 @@ function MatchGame({ words, award }: { words: Vocabulary[]; award: AwardFn }) {
   return <div className="game-stage">
     <div className="game-prompt compact"><span>Match all four pairs</span><h2>{matched.length} / {pairs.length}</h2><p>Select a word, then its meaning.</p></div>
     <div className="match-board">
-      <div>{pairs.map((word) => <button key={word.id} disabled={matched.includes(word.id)} className={`${selectedWord === word.id ? "selected" : ""} ${matched.includes(word.id) ? "matched" : ""}`} onClick={() => setSelectedWord(word.id)}>{word.word}</button>)}</div>
+      <div>{pairs.map((word) => <div key={word.id} className={`match-word-row ${matched.includes(word.id) ? "matched" : ""}`}><button disabled={matched.includes(word.id)} className={`${selectedWord === word.id ? "selected" : ""} ${matched.includes(word.id) ? "matched" : ""}`} onClick={() => setSelectedWord(word.id)}>{word.word}</button><button type="button" className="match-audio-btn" onClick={() => speakEnglish(word.word)} aria-label={`Listen to ${word.word}`} title="Listen"><Volume2 size={15} /></button></div>)}</div>
       <div>{meanings.map((word) => <button key={word.id} disabled={matched.includes(word.id)} className={`${matched.includes(word.id) ? "matched" : ""} ${wrong === word.id ? "wrong" : ""}`} onClick={() => chooseMeaning(word.id)}>{word.meaning}</button>)}</div>
     </div>
     {done && <div className="game-complete"><Trophy size={30} /><strong>Board cleared!</strong><span>Great recall. Shuffle and try another set.</span><button className="button primary" onClick={() => setSeed((v) => v + 1)}><RotateCcw size={16} /> New board</button></div>}
@@ -244,11 +241,12 @@ function SpeedGame({ words, award }: { words: Vocabulary[]; award: AwardFn }) {
 
   return <div className="game-stage speed-stage">
     <div className="speed-bar"><strong><Timer size={18} /> {seconds}s</strong><span>{score} correct</span></div>
-    <div className="game-prompt"><span>Pick fast</span><h2>{round.target.word}</h2><p>Choose the meaning before time runs out.</p></div>
+    <div className="game-prompt"><span>Pick fast</span><div className="prompt-word-with-audio"><h2>{round.target.word}</h2><button className="word-audio-btn" type="button" onClick={() => speakEnglish(round.target.word)} aria-label={`Listen to ${round.target.word}`} title="Listen"><Volume2 size={19} /></button></div><p>Choose the meaning before time runs out.</p></div>
     <div className="quiz-options compact">{round.options.map((option) => {
       const correct = option.id === round.target.id;
       return <button key={option.id} disabled={picked !== null} className={picked ? correct ? "correct" : picked === option.id ? "wrong" : "" : ""} onClick={() => {
         setPicked(option.id);
+        speakEnglish(round.target.word);
         void award(12, correct);
         if (correct) setScore((v) => v + 1);
         window.setTimeout(() => { setPicked(null); setSeed((v) => v + 1); }, 320);

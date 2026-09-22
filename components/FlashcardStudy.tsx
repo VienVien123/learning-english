@@ -3,15 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { RotateCcw, Volume2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import type { ReviewRating, Vocabulary } from "@/lib/types";
-
-function speak(text: string) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "en-US";
-  utterance.rate = 0.9;
-  window.speechSynthesis.speak(utterance);
-}
+import { speakEnglish } from "@/lib/speech";
 
 export default function FlashcardStudy({
   words,
@@ -41,6 +33,14 @@ export default function FlashcardStudy({
     );
   }
 
+  function toggleReveal() {
+    setRevealed((wasRevealed) => {
+      const next = !wasRevealed;
+      if (next) speakEnglish(current.word);
+      return next;
+    });
+  }
+
   async function rate(rating: ReviewRating) {
     setBusy(true);
     try {
@@ -63,14 +63,14 @@ export default function FlashcardStudy({
         <button className="button secondary compact" onClick={() => { setIndex(0); setRevealed(false); }}><RotateCcw size={16} /> Restart</button>
       </div>
 
-      <div className={`flashcard ${revealed ? "revealed" : ""}`} onClick={() => setRevealed((v) => !v)}>
+      <div className={`flashcard ${revealed ? "revealed" : ""}`} onClick={toggleReveal}>
         <div className="card-glow" />
         <div className="flashcard-face">
           <div className="flashcard-badges">
             {current.part_of_speech && <span>{current.part_of_speech}</span>}
             {current.tags?.slice(0, 2).map((tag) => <span key={tag}>{tag}</span>)}
           </div>
-          <button className="speak-btn" onClick={(e) => { e.stopPropagation(); speak(current.word); }} aria-label="Pronounce word"><Volume2 size={20} /></button>
+          <button className="speak-btn" onClick={(e) => { e.stopPropagation(); speakEnglish(current.word); }} aria-label="Pronounce word"><Volume2 size={20} /></button>
           <div className="flashcard-center">
             <h1>{current.word}</h1>
             {current.pronunciation && <div className="pronunciation">{current.pronunciation}</div>}

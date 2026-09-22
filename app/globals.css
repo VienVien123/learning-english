@@ -373,3 +373,27 @@ kbd { border: 1px solid var(--line); background: var(--surface-2); padding: 3px 
   .import-preview-head { align-items:flex-start; flex-direction:column; }
   .import-columns-note { text-align:left; }
 }
+
+/* Vocabulary pronunciation controls */
+.prompt-word-with-audio { display:flex; align-items:center; justify-content:center; gap:10px; }
+.prompt-word-with-audio h2 { margin-left:44px; }
+.word-audio-btn { width:34px; height:34px; flex:0 0 34px; display:grid; place-items:center; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); color:var(--primary); transition:.15s ease; }
+.word-audio-btn:hover { transform:translateY(-1px); border-color:var(--primary); background:var(--primary-soft); }
+.answered-word-audio { width:min(680px,100%); margin-top:12px; padding:9px 12px; display:flex; align-items:center; justify-content:center; gap:12px; color:var(--muted); font-size:10px; }
+.answered-word-audio>span { color:var(--text); font-weight:850; font-size:12px; }
+.answered-word-audio button { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:999px; background:var(--surface-2); color:var(--primary); padding:7px 10px; font-size:9px; font-weight:800; }
+.answer-feedback>div { display:flex; flex-direction:column; gap:2px; }
+.feedback-audio-btn { width:34px; height:34px; flex:0 0 34px; display:grid; place-items:center; align-self:center; border:1px solid currentColor; border-radius:10px; background:transparent; color:inherit; opacity:.85; }
+.feedback-audio-btn:hover { opacity:1; transform:scale(1.04); }
+.match-word-row { display:grid; grid-template-columns:minmax(0,1fr) 38px; gap:6px; }
+.match-word-row>button:first-child { width:100%; }
+.match-audio-btn { min-height:54px!important; padding:0!important; display:grid!important; place-items:center; border:1px solid var(--line)!important; color:var(--primary)!important; background:var(--surface)!important; }
+.match-audio-btn:hover { border-color:var(--primary)!important; background:var(--primary-soft)!important; }
+.match-word-row.matched .match-audio-btn { opacity:1!important; }
+@media (max-width: 640px) {
+  .prompt-word-with-audio h2 { margin-left:38px; }
+  .word-audio-btn { width:30px; height:30px; flex-basis:30px; }
+  .answered-word-audio { flex-wrap:wrap; }
+  .match-word-row { grid-template-columns:minmax(0,1fr) 34px; gap:4px; }
+  .match-audio-btn { min-height:58px!important; }
+}
