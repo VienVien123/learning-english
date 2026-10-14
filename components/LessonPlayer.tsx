@@ -227,6 +227,8 @@ export default function LessonPlayer({
   }, [index, onReview, reviewKey, word]);
 
   const next = useCallback(() => {
+    // Stop anything still being read so it doesn't overlap the next word.
+    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
     setResult(null);
     setIndex((i) => i + 1);
   }, []);
@@ -235,10 +237,8 @@ export default function LessonPlayer({
   const grade = useCallback((correct: boolean, answer: string, extra: Partial<Result> = {}) => {
     if (!word || !step) return;
     setResult({ correct, answer, ...extra });
+    // Only the chime here: reading the word again would run into the next word's audio.
     playSound(correct ? "correct" : "wrong");
-    // Let the chime finish before the word is read.
-    const spoken = word.word;
-    window.setTimeout(() => speakEnglish(spoken), 320);
     // Pronunciation is scored on its own and doesn't affect what you "know".
     if (step.kind === "speak") return;
     setTally((t) => ({ correct: t.correct + (correct ? 1 : 0), wrong: t.wrong + (correct ? 0 : 1) }));
