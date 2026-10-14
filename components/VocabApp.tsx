@@ -110,11 +110,10 @@ export default function VocabApp() {
   const currentUserIdRef = useRef<string | null>(null);
   const draftRestoreCheckedRef = useRef<string | null>(null);
 
-  const flashWords = useMemo(() => {
-    const inDeck = deckFilter === "all" ? words : words.filter((w) => w.deck_id === deckFilter);
-    const due = inDeck.filter(isDue);
-    return due.length ? due : inDeck.filter((w) => w.mastery_level < 5);
-  }, [words, deckFilter]);
+  const deckWords = useMemo(
+    () => (deckFilter === "all" ? words : words.filter((w) => w.deck_id === deckFilter)),
+    [words, deckFilter],
+  );
 
   const filteredWords = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -542,6 +541,19 @@ export default function VocabApp() {
     if (next) setProgress(next as UserProgress);
   }
 
+  async function saveNote(word: Vocabulary, note: string) {
+    if (!user) return;
+    const patch = { note: note.trim() || null, updated_at: new Date().toISOString() };
+    setWords((prev) => prev.map((w) => w.id === word.id ? { ...w, ...patch } : w));
+    const { error } = await supabase.from("vocabularies").update(patch).eq("id", word.id).eq("user_id", user.id);
+    if (error) {
+      showToast(error.message);
+      await loadData(user.id, true);
+      return;
+    }
+    showToast("Đã lưu ghi chú");
+  }
+
   async function reviewWord(word: Vocabulary, rating: ReviewRating) {
     if (!user) return;
     const update = getReviewUpdate(word, rating);
@@ -697,8 +709,8 @@ export default function VocabApp() {
           {view === "words" && <VocabularyView words={filteredWords} decks={decks} query={query} setQuery={setQuery} deckFilter={deckFilter} setDeckFilter={setDeckFilter} levelFilter={levelFilter} setLevelFilter={setLevelFilter} onEdit={(w) => { setEditingWord(w); setWordModalOpen(true); }} onDelete={deleteWord} onFavorite={toggleFavorite} onImport={() => setImportModalOpen(true)} onAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
           {view === "flashcards" && (
             <div>
-              <PageHeader eyebrow="FOCUS MODE" title="Flashcard session" subtitle="Active recall + spaced repetition. Rate the card after revealing the answer." action={<select className="clean-select" value={deckFilter} onChange={(e) => setDeckFilter(e.target.value)}><option value="all">All decks</option>{decks.map((d) => <option key={d.id} value={d.id}>{d.icon} {d.name}</option>)}</select>} />
-              <FlashcardStudy words={flashWords} onReview={reviewWord} />
+              <PageHeader eyebrow="FOCUS MODE" title="Flashcard session" subtitle="Lật thẻ, tự nhớ nghĩa rồi chọn Đã thuộc hoặc Chưa thuộc. Từ chưa thuộc được ghi vào sổ Cần ôn." action={<select className="clean-select" value={deckFilter} onChange={(e) => setDeckFilter(e.target.value)}><option value="all">All decks</option>{decks.map((d) => <option key={d.id} value={d.id}>{d.icon} {d.name}</option>)}</select>} />
+              <FlashcardStudy words={deckWords} reviewKey={`tv-english-review:${user.id}`} onReview={reviewWord} onSaveNote={saveNote} />
             </div>
           )}
           {view === "games" && <GamesView words={words} progress={progress} onActivity={recordActivity} />}
