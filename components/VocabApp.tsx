@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookOpen, Brain, ChartNoAxesCombined, Check, ChevronDown, Flame, FolderOpen, Heart,
+  BookOpen, Brain, ChartNoAxesCombined, Check, ChevronDown, FolderOpen, Heart,
   LayoutDashboard, Library, Loader2, Moon, MoreHorizontal, Pencil, Plus, Search, Sparkles,
-  Sun, Trash2, Volume2, Wifi, WifiOff, X, Zap, LogOut, Gamepad2, Trophy, FileUp
+  Sun, Trash2, Volume2, Wifi, WifiOff, X, Zap, LogOut, Gamepad2, Trophy, FileUp,
+  Menu, Pin, PinOff
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
@@ -15,6 +16,8 @@ import WordModal, { type WordDraft } from "./WordModal";
 import DeckModal, { type DeckDraft } from "./DeckModal";
 import FlashcardStudy from "./FlashcardStudy";
 import AuthScreen from "./AuthScreen";
+import { LogoMark } from "./Logo";
+import { PeekCrew, SootBackdrop, SootBuddy, useSootEyes, type CrewMember } from "./Soot";
 import GamesView, { AchievementsView } from "./GamesView";
 import ImportWordsModal from "./ImportWordsModal";
 
@@ -27,6 +30,22 @@ const navItems: { id: ViewName; label: string; icon: React.ElementType }[] = [
   { id: "stats", label: "Progress", icon: ChartNoAxesCombined },
   { id: "achievements", label: "Achievements", icon: Trophy },
 ];
+
+const navGroups: { label: string; items: typeof navItems }[] = [
+  { label: "LEARN", items: navItems.filter(({ id }) => ["dashboard", "words", "decks"].includes(id)) },
+  { label: "PRACTICE", items: navItems.filter(({ id }) => ["flashcards", "games"].includes(id)) },
+  { label: "PROGRESS", items: navItems.filter(({ id }) => ["stats", "achievements"].includes(id)) },
+];
+
+const mobileNavLabels: Record<ViewName, string> = {
+  dashboard: "Home",
+  words: "Words",
+  flashcards: "Cards",
+  games: "Games",
+  decks: "Decks",
+  stats: "Stats",
+  achievements: "Awards",
+};
 
 function speak(text: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -46,7 +65,25 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(value));
 }
 
+const HERO_CREW: CrewMember[] = [
+  { x: 56, size: 70, look: { bloom: "green" } },
+  { x: 68, size: 88, look: { hat: true, holdR: "star-yellow" }, bubble: true },
+  { x: 81, size: 112, look: { bloom: "pink", holdL: "star-pink", holdR: "flower-yellow" } },
+  { x: 93, size: 70, look: { hat: true } },
+];
+
+function BootCrew() {
+  return (
+    <div className="boot-crew">
+      <SootBuddy size={30} mood="busy" look={{ bloom: "pink" }} />
+      <SootBuddy size={38} mood="busy" look={{ hat: true }} />
+      <SootBuddy size={30} mood="busy" look={{ bloom: "yellow" }} />
+    </div>
+  );
+}
+
 export default function VocabApp() {
+  useSootEyes();
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [view, setView] = useState<ViewName>("dashboard");
@@ -64,8 +101,11 @@ export default function VocabApp() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [editingWord, setEditingWord] = useState<Vocabulary | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarPinned, setSidebarPinned] = useState(false);
   const [toast, setToast] = useState("");
   const [recoveryMode, setRecoveryMode] = useState(false);
+  const [authHold, setAuthHold] = useState(false);
   const currentUserIdRef = useRef<string | null>(null);
   const draftRestoreCheckedRef = useRef<string | null>(null);
 
@@ -151,6 +191,12 @@ export default function VocabApp() {
     setTheme(initial);
     document.documentElement.dataset.theme = initial;
 
+    const savedSidebarPinned = localStorage.getItem("lexibloom-sidebar-pinned") === "true";
+    if (savedSidebarPinned) {
+      setSidebarPinned(true);
+      setSidebarOpen(true);
+    }
+
     setOnline(navigator.onLine);
     const onOnline = () => setOnline(true);
     const onOffline = () => setOnline(false);
@@ -161,6 +207,26 @@ export default function VocabApp() {
       window.removeEventListener("offline", onOffline);
     };
   }, []);
+
+  const closeSidebar = () => {
+    setSidebarOpen(false);
+    if (sidebarPinned) {
+      setSidebarPinned(false);
+      localStorage.setItem("lexibloom-sidebar-pinned", "false");
+    }
+  };
+
+  const toggleSidebar = () => {
+    if (sidebarOpen) closeSidebar();
+    else setSidebarOpen(true);
+  };
+
+  const toggleSidebarPin = () => {
+    const next = !sidebarPinned;
+    setSidebarPinned(next);
+    localStorage.setItem("lexibloom-sidebar-pinned", String(next));
+    if (next) setSidebarOpen(true);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -547,13 +613,14 @@ export default function VocabApp() {
   }
 
   if (!authReady) {
-    return <div className="boot-screen"><div className="brand-mark"><BookOpen size={28} /></div><Loader2 className="spin" size={22} /><p>Preparing your vocabulary space…</p></div>;
+    return <div className="boot-screen"><LogoMark size={64} className="boot-logo" /><BootCrew /><p>Preparing your vocabulary space…</p></div>;
   }
 
-  if (!user || user.is_anonymous || recoveryMode) {
+  if (!user || user.is_anonymous || recoveryMode || authHold) {
     return (
       <AuthScreen
         user={user}
+        onHold={setAuthHold}
         recoveryMode={recoveryMode}
         onPrepareGuestMigration={prepareGuestMigration}
         onRecoveryDone={() => {
@@ -567,27 +634,38 @@ export default function VocabApp() {
   }
 
   if (loading) {
-    return <div className="boot-screen"><div className="brand-mark"><BookOpen size={28} /></div><Loader2 className="spin" size={22} /><p>Loading your vocabulary…</p></div>;
+    return <div className="boot-screen"><LogoMark size={64} className="boot-logo" /><BootCrew /><p>Loading your vocabulary…</p></div>;
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${sidebarOpen ? "menu-open" : ""} ${sidebarPinned ? "menu-pinned" : ""}`}>
+      <SootBackdrop />
+      {!sidebarPinned && <button className="menu-rail" onClick={toggleSidebar} aria-label="Open function menu"><Menu size={21} /></button>}
+      {sidebarOpen && !sidebarPinned && <button className="menu-backdrop" onClick={closeSidebar} aria-label="Close function menu" />}
       <aside className="sidebar">
+        <div className="sidebar-head">
+          <button className="sidebar-close" onClick={closeSidebar} aria-label="Close menu"><X size={18} /></button>
+          <button className={`sidebar-pin ${sidebarPinned ? "pinned" : ""}`} onClick={toggleSidebarPin} aria-label={sidebarPinned ? "Unpin menu" : "Pin menu"} aria-pressed={sidebarPinned} title={sidebarPinned ? "Unpin menu" : "Pin menu"}>
+            {sidebarPinned ? <PinOff size={16} /> : <Pin size={16} />}<span>{sidebarPinned ? "Đã ghim" : "Ghim"}</span>
+          </button>
+        </div>
         <button className="logo" onClick={() => setView("dashboard")}>
-          <span className="logo-icon"><BookOpen size={21} /></span>
-          <span><strong>LexiBloom</strong><small>Learn a little every day</small></span>
+          <LogoMark size={42} />
+          <span><strong className="brand-name"><span>TV</span>-English</strong><small>Learn a little every day</small></span>
         </button>
 
-        <nav>
-          <div className="nav-label">LEARN</div>
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return <button key={item.id} className={`nav-item ${view === item.id ? "active" : ""}`} onClick={() => setView(item.id)}><Icon size={19} /><span>{item.label}</span>{item.id === "flashcards" && stats.due > 0 && <b>{stats.due}</b>}</button>;
-          })}
+        <nav aria-label="Main navigation">
+          {navGroups.map((group) => <div className="nav-group" key={group.label}>
+            <div className="nav-label">{group.label}</div>
+            {group.items.map((item) => {
+              const Icon = item.icon;
+              return <button key={item.id} className={`nav-item ${view === item.id ? "active" : ""}`} aria-current={view === item.id ? "page" : undefined} onClick={() => { setView(item.id); if (!sidebarPinned) setSidebarOpen(false); }}><Icon size={19} /><span>{item.label}</span>{item.id === "flashcards" && stats.due > 0 && <b>{stats.due}</b>}</button>;
+            })}
+          </div>)}
         </nav>
 
         <div className="sidebar-card">
-          <div className="sidebar-card-icon"><Flame size={18} /></div>
+          <SootBuddy size={46} look={{ hat: true, holdR: "star-yellow" }} mood={stats.due ? "curious" : "idle"} tool={stats.due ? "magnifier" : undefined} />
           <div><strong>{effectiveStreak(progress)} day streak · {progress.total_xp} XP</strong><p>{stats.due ? `${stats.due} cards are ready to review.` : "Try a quick vocabulary game."}</p></div>
           <button onClick={() => setView(stats.due ? "flashcards" : "games")}>{stats.due ? "Study now" : "Play game"}</button>
         </div>
@@ -600,7 +678,10 @@ export default function VocabApp() {
 
       <main className="main-panel">
         <header className="topbar">
-          <div className="mobile-brand"><span className="logo-icon"><BookOpen size={18} /></span><strong>LexiBloom</strong></div>
+          <button className="icon-btn sidebar-toggle" onClick={toggleSidebar} aria-label={sidebarOpen ? "Close menu" : "Open menu"} aria-expanded={sidebarOpen} title={sidebarOpen ? "Close menu" : "Open menu"}>
+            <Menu size={18} />
+          </button>
+          <div className="mobile-brand"><LogoMark size={34} /><strong className="brand-name"><span>TV</span>-English</strong></div>
           <div className="global-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search your vocabulary..." onFocus={() => setView("words")} /><kbd>⌘ K</kbd></div>
           <div className="topbar-actions">
             <span className={`sync-status ${online ? "online" : ""}`}>{syncing ? <Loader2 className="spin" size={14} /> : online ? <Check size={14} /> : <WifiOff size={14} />}{syncing ? "Syncing" : online ? "Live sync" : "Offline"}</span>
@@ -611,7 +692,7 @@ export default function VocabApp() {
         </header>
 
         <section className="content">
-          {view === "dashboard" && <Dashboard words={words} decks={decks} stats={stats} progress={progress} weakWords={weakWords} setView={setView} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
+          {view === "dashboard" && <Dashboard name={user.user_metadata?.display_name || user.email?.split("@")[0] || "Learner"} words={words} decks={decks} stats={stats} progress={progress} weakWords={weakWords} setView={setView} openDeck={(id) => { setDeckFilter(id); setView("words"); }} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
           {view === "words" && <VocabularyView words={filteredWords} decks={decks} query={query} setQuery={setQuery} deckFilter={deckFilter} setDeckFilter={setDeckFilter} levelFilter={levelFilter} setLevelFilter={setLevelFilter} onEdit={(w) => { setEditingWord(w); setWordModalOpen(true); }} onDelete={deleteWord} onFavorite={toggleFavorite} onImport={() => setImportModalOpen(true)} onAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
           {view === "flashcards" && (
             <div>
@@ -626,8 +707,8 @@ export default function VocabApp() {
         </section>
       </main>
 
-      <nav className="mobile-nav">
-        {navItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><Icon size={20} /><span>{item.label === "Vocabulary" ? "Words" : item.label}</span></button>; })}
+      <nav className="mobile-nav" aria-label="Mobile navigation">
+        {navItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} aria-current={view === item.id ? "page" : undefined} onClick={() => setView(item.id)}><Icon size={20} /><span>{mobileNavLabels[item.id]}</span></button>; })}
       </nav>
 
       <WordModal
@@ -650,7 +731,7 @@ export default function VocabApp() {
           await loadData(user.id, true);
         }}
       />
-      {toast && <div className="toast"><Check size={16} /> {toast}</div>}
+      {toast && <div className="toast"><SootBuddy size={30} mood="happy" look={{ bloom: "pink" }} /> {toast}</div>}
     </div>
   );
 }
@@ -659,69 +740,106 @@ function PageHeader({ eyebrow, title, subtitle, action }: { eyebrow: string; tit
   return <div className="page-header"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{subtitle}</p></div>{action}</div>;
 }
 
-function Dashboard({ words, decks, stats, progress, weakWords, setView, openAdd }: { words: Vocabulary[]; decks: Deck[]; stats: { total: number; mastered: number; due: number; reviewed: number; accuracy: number; mastery: number }; progress: UserProgress; weakWords: Vocabulary[]; setView: (v: ViewName) => void; openAdd: () => void }) {
-  const recent = words.slice(0, 5);
+function Dashboard({ name, words, decks, stats, progress, weakWords, setView, openDeck, openAdd }: { name: string; words: Vocabulary[]; decks: Deck[]; stats: { total: number; mastered: number; due: number; reviewed: number; accuracy: number; mastery: number }; progress: UserProgress; weakWords: Vocabulary[]; setView: (v: ViewName) => void; openDeck: (id: string) => void; openAdd: () => void }) {
+  const recent = words.slice(0, 4);
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
+  const streak = effectiveStreak(progress);
   return (
     <>
-      <div className="hero-row">
-        <div>
-          <div className="eyebrow"><Sparkles size={14} /> YOUR LEARNING SPACE</div>
-          <h1>{greeting} 👋</h1>
-          <p>Small reviews, repeated often, turn new words into long-term memory.</p>
+      <PeekCrew
+        className="hero-peek"
+        members={HERO_CREW}
+        mood={stats.due ? "curious" : "idle"}
+        signs={[undefined, undefined, streak ? `🔥 ${streak}-day streak` : "Let's learn!"]}
+        signTone="good"
+        ledge={96}
+      >
+        <div className="hero-row learn-hero hero-card">
+          <div>
+            <div className="eyebrow"><Sparkles size={14} /> YOUR LEARNING PATH</div>
+            <h1>{greeting}, {name} 👋</h1>
+            <p>{stats.due ? `The soot crew found ${stats.due} words waiting for review.` : "Pick up where you left off and keep your streak going."}</p>
+          </div>
+          <button className="button primary large" onClick={() => setView("flashcards")}><Brain size={19} /> Start review <span>{stats.due}</span></button>
         </div>
-        <button className="button primary large" onClick={() => setView("flashcards")}><Brain size={19} /> Start review <span>{stats.due}</span></button>
-      </div>
+      </PeekCrew>
 
-      <div className="stat-grid">
-        <StatCard icon={<Library size={20} />} label="Total words" value={stats.total} hint={`${decks.length} decks`} tone="violet" />
-        <StatCard icon={<Brain size={20} />} label="Due today" value={stats.due} hint="ready to review" tone="orange" />
-        <StatCard icon={<Zap size={20} />} label="Mastery" value={`${stats.mastery}%`} hint={`${stats.mastered} mastered`} tone="teal" />
-        <StatCard icon={<ChartNoAxesCombined size={20} />} label="Accuracy" value={`${stats.accuracy}%`} hint={`${stats.reviewed} reviews`} tone="blue" />
+      <div className="learn-layout">
+        <LearningPath decks={decks} words={words} openDeck={openDeck} onBrowse={() => setView("decks")} />
+        <aside className="learn-aside">
+          <section className="lesson-goal-card">
+            <div className="lesson-goal-head"><span className="lesson-goal-icon">🔥</span><span>DAILY GOAL</span><strong>{Math.min(effectiveDailyAnswers(progress), DAILY_GOAL)}/{DAILY_GOAL}</strong></div>
+            <div className="lesson-goal-track"><span style={{ width: `${Math.min(100, Math.round(effectiveDailyAnswers(progress) / DAILY_GOAL * 100))}%` }} /></div>
+            <p>{Math.max(0, DAILY_GOAL - effectiveDailyAnswers(progress))} answers to keep your learning streak alive.</p>
+            <button className="text-button" onClick={() => setView("games")}>Practice now →</button>
+          </section>
+          <section className="learn-stats-card">
+            <div className="learn-stat"><span>Words learned</span><strong>{stats.total}</strong></div>
+            <div className="learn-stat"><span>Ready to review</span><strong>{stats.due}</strong></div>
+            <div className="learn-stat"><span>Current streak</span><strong>{effectiveStreak(progress)} <small>days</small></strong></div>
+          </section>
+          <div className="learn-aside-actions">
+            <button className="button secondary" onClick={openAdd}><Plus size={16} /> Add a word</button>
+            <button className="button secondary" onClick={() => setView("games")}><Gamepad2 size={16} /> Play a game</button>
+          </div>
+        </aside>
       </div>
 
       <GamificationDashboard progress={progress} weakWords={weakWords} setView={setView} />
 
-      <div className="dashboard-grid">
-        <section className="panel focus-panel">
-          <div className="panel-title"><div><span>Today&apos;s focus</span><h2>Build your memory loop</h2></div><button className="text-button" onClick={() => setView("flashcards")}>Open session →</button></div>
-          <div className="focus-content">
-            <div className="mastery-ring" style={{ "--progress": `${Math.max(2, stats.mastery)}%` } as React.CSSProperties}><div><strong>{stats.mastery}%</strong><span>mastery</span></div></div>
-            <div className="focus-copy"><h3>{stats.due ? `${stats.due} cards are waiting for you` : "Your reviews are complete"}</h3><p>{stats.due ? "A short focused session now is better than a long session later." : "Add a few fresh words, or explore a deck you want to strengthen."}</p><div className="focus-actions"><button className="button primary" onClick={() => setView("flashcards")}><Brain size={17} /> Review now</button><button className="button secondary" onClick={openAdd}><Plus size={17} /> New word</button></div></div>
-          </div>
-        </section>
-
-        <section className="panel streak-panel">
-          <div className="panel-title"><div><span>Learning streak</span><h2>Consistency</h2></div><div className="round-badge"><Flame size={18} /></div></div>
-          <div className="streak-live"><div><strong>{effectiveStreak(progress)}</strong><span>current days</span></div><div><strong>{progress.best_streak}</strong><span>best streak</span></div></div>
-          <p className="streak-copy"><strong>{effectiveDailyAnswers(progress) >= DAILY_GOAL ? "Daily challenge complete 🎉" : `${Math.max(0, DAILY_GOAL - effectiveDailyAnswers(progress))} answers left today`}</strong><br />A quick game or review keeps your rhythm alive.</p>
-        </section>
-      </div>
-
       <section className="panel recent-panel">
-        <div className="panel-title"><div><span>Recently added</span><h2>Your newest vocabulary</h2></div><button className="text-button" onClick={() => setView("words")}>View all →</button></div>
+        <div className="panel-title"><div><span>RECENT WORDS</span><h2>Keep these fresh</h2></div><button className="text-button" onClick={() => setView("words")}>View all →</button></div>
         {recent.length ? <div className="recent-list">{recent.map((word) => <div className="recent-item" key={word.id}><div className="word-orb">{word.word.slice(0, 1).toUpperCase()}</div><div className="recent-word"><strong>{word.word}</strong><span>{word.pronunciation || word.part_of_speech || "Vocabulary"}</span></div><div className="recent-meaning">{word.meaning}</div><span className={`level-pill level-${word.mastery_level}`}>{masteryLabel(word.mastery_level)}</span></div>)}</div> : <EmptyWords openAdd={openAdd} />}
       </section>
     </>
   );
 }
 
+function LearningPath({ decks, words, openDeck, onBrowse }: { decks: Deck[]; words: Vocabulary[]; openDeck: (id: string) => void; onBrowse: () => void }) {
+  const lessons = decks.map((deck) => {
+    const deckWords = words.filter((word) => word.deck_id === deck.id);
+    const mastered = deckWords.filter((word) => word.mastery_level >= 5).length;
+    return { deck, count: deckWords.length, mastered, percent: deckWords.length ? Math.round(mastered / deckWords.length * 100) : 0 };
+  });
+  const currentIndex = lessons.findIndex((lesson) => lesson.percent < 100);
+  const completed = lessons.filter((lesson) => lesson.percent === 100).length;
+
+  return <section className="learning-path panel">
+    <div className="path-unit-header">
+      <div className="path-unit-badge"><BookOpen size={20} /></div>
+      <div><span>YOUR UNITS</span><h2>Vocabulary path</h2><p>Learn a little every day</p></div>
+      <span className="path-unit-count">{completed}/{lessons.length}</span>
+    </div>
+    {lessons.length ? <div className="path-route">
+      {lessons.slice(0, 8).map((lesson, index) => {
+        const done = lesson.percent === 100;
+        const current = !done && (currentIndex === -1 ? index === lessons.length - 1 : index === currentIndex);
+        return <div className={`path-step ${done ? "complete" : ""} ${current ? "current" : ""}`} key={lesson.deck.id}>
+          <button className="path-node" onClick={() => openDeck(lesson.deck.id)} aria-label={`Open ${lesson.deck.name}`}>
+            {done ? <Check size={22} /> : <span>{lesson.deck.icon || index + 1}</span>}
+          </button>
+          <button className="path-step-card" onClick={() => openDeck(lesson.deck.id)}>
+            <span className="path-step-label">UNIT {index + 1} <i>{done ? "COMPLETE" : current ? "CONTINUE" : "YOUR DECK"}</i></span>
+            <strong>{lesson.deck.name}</strong>
+            <small>{lesson.count ? `${lesson.mastered} of ${lesson.count} words mastered` : "Add words to begin this unit"}</small>
+            <span className="path-step-progress"><i style={{ width: `${lesson.percent}%` }} /></span>
+          </button>
+        </div>;
+      })}
+      {lessons.length > 8 && <button className="text-button path-more" onClick={onBrowse}>View all {lessons.length} units →</button>}
+    </div> : <div className="path-empty"><SootBuddy size={64} look={{ bloom: "green", holdR: "flower-yellow" }} /><strong>Your path starts with a deck</strong><p>Create a vocabulary deck, then add words to begin learning.</p><button className="button secondary" onClick={onBrowse}>Browse decks</button></div>}
+  </section>;
+}
+
 
 function GamificationDashboard({ progress, weakWords, setView }: { progress: UserProgress; weakWords: Vocabulary[]; setView: (v: ViewName) => void }) {
   const level = levelInfo(progress.total_xp);
-  const streak = effectiveStreak(progress);
-  const daily = effectiveDailyAnswers(progress);
-  const dailyPct = Math.min(100, Math.round(daily / DAILY_GOAL * 100));
 
   return <div className="gamification-dashboard">
     <section className="panel xp-panel">
       <div className="xp-main"><div className="xp-level"><Trophy size={21} /><span>LV</span><strong>{level.level}</strong></div><div><span className="mini-label">YOUR LEVEL</span><h3>{progress.total_xp.toLocaleString()} XP</h3><p>{level.currentXp} / {level.neededXp} XP toward level {level.level + 1}</p></div></div>
       <div className="xp-progress"><span style={{ width: `${level.percent}%` }} /></div>
       <button className="text-button" onClick={() => setView("games")}>Earn XP in Games →</button>
-    </section>
-    <section className="panel daily-panel">
-      <div className="daily-ring" style={{ "--daily": `${Math.max(2, dailyPct)}%` } as React.CSSProperties}><div><Flame size={19} /><strong>{streak}</strong><span>day streak</span></div></div>
-      <div><span className="mini-label">DAILY CHALLENGE</span><h3>{Math.min(daily, DAILY_GOAL)} / {DAILY_GOAL} answers</h3><p>Mix flashcards and games to complete today&apos;s goal.</p><button className="text-button" onClick={() => setView("games")}>Continue challenge →</button></div>
     </section>
     <section className="panel weak-panel">
       <div className="panel-title compact"><div><span>Smart practice</span><h2>Weak words</h2></div><button className="text-button" onClick={() => setView("games")}>Practice →</button></div>
@@ -735,7 +853,7 @@ function StatCard({ icon, label, value, hint, tone }: { icon: React.ReactNode; l
 }
 
 function EmptyWords({ openAdd }: { openAdd: () => void }) {
-  return <div className="empty-inline"><div className="empty-icon"><BookOpen size={24} /></div><div><strong>Your vocabulary library is empty</strong><p>Add your first word and LexiBloom will schedule it for review.</p></div><button className="button primary" onClick={openAdd}><Plus size={16} /> Add first word</button></div>;
+  return <div className="empty-inline"><SootBuddy size={64} look={{ bloom: "pink", holdR: "flower-green" }} /><div><strong>Your vocabulary library is empty</strong><p>Add your first word and TV-English will schedule it for review.</p></div><button className="button primary" onClick={openAdd}><Plus size={16} /> Add first word</button></div>;
 }
 
 function VocabularyView({ words, decks, query, setQuery, deckFilter, setDeckFilter, levelFilter, setLevelFilter, onEdit, onDelete, onFavorite, onImport, onAdd }: {
@@ -762,7 +880,7 @@ function VocabularyView({ words, decks, query, setQuery, deckFilter, setDeckFilt
             <div><span className="date-cell">{word.next_review_at ? formatDate(word.next_review_at) : "Now"}</span></div>
             <div className="row-actions"><button onClick={() => onEdit(word)} title="Edit"><Pencil size={16} /></button><button className="danger" onClick={() => onDelete(word)} title="Delete"><Trash2 size={16} /></button></div>
           </div>;
-        }) : <div className="empty-table"><Search size={26} /><strong>No vocabulary found</strong><span>Try another search or filter.</span></div>}
+        }) : <div className="empty-table"><SootBuddy size={70} mood="curious" tool="magnifier" look={{ bloom: "yellow" }} /><strong>No vocabulary found</strong><span>Try another search or filter.</span></div>}
       </div>
       <div className="result-count">Showing <strong>{words.length}</strong> words</div>
     </>

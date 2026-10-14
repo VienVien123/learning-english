@@ -182,7 +182,7 @@ export default function ImportWordsModal({
       const headers = (matrix[0] ?? []).map(normalizeHeader);
       const missing = REQUIRED_COLUMNS.filter((column) => !headers.includes(column));
       if (missing.length) {
-        throw new Error(`Thiếu cột bắt buộc: ${missing.join(", ")}. Hãy dùng file template của LexiBloom.`);
+        throw new Error(`Thiếu cột bắt buộc: ${missing.join(", ")}. Hãy dùng file template của TV-English.`);
       }
 
       const columnIndexes = new Map<string, number>();

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LexiBloom — Learn vocabulary beautifully",
+  title: "TV-English — Learn English vocabulary",
   description: "Realtime vocabulary learning, flashcards and spaced repetition powered by Supabase.",
 };
 

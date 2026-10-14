@@ -1,21 +1,20 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
 import {
   ArrowLeft,
-  BookOpen,
-  CheckCircle2,
   Eye,
   EyeOff,
   Loader2,
   LockKeyhole,
   Mail,
   ShieldCheck,
-  Sparkles,
   UserPlus,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import AuthMascots from "./AuthMascots";
+import { Logo } from "./Logo";
 
 type Mode = "login" | "register" | "forgot" | "upgrade" | "recovery";
 
@@ -24,7 +23,11 @@ type Props = {
   recoveryMode?: boolean;
   onPrepareGuestMigration?: (nextMode: "login" | "register", email?: string) => Promise<void>;
   onRecoveryDone?: () => void;
+  // Keeps this screen mounted after sign-in so the celebration can play.
+  onHold?: (hold: boolean) => void;
 };
+
+const CELEBRATION_MS = 2000;
 
 function friendlyError(message: string) {
   const lower = message.toLowerCase();
@@ -38,11 +41,24 @@ function friendlyError(message: string) {
   return message;
 }
 
+// Short text for the sign the mascots hold up when something goes wrong.
+function errorSign(message: string) {
+  if (!message) return "";
+  if (message.includes("Email hoặc mật khẩu chưa đúng")) return "Sai thông tin!";
+  if (message.includes("xác nhận email")) return "Chưa xác nhận email";
+  if (message.includes("đã có tài khoản")) return "Email đã tồn tại";
+  if (message.includes("8 ký tự") || message.includes("chưa đạt yêu cầu")) return "Cần ≥ 8 ký tự";
+  if (message.includes("không giống nhau")) return "Mật khẩu không khớp";
+  if (message.includes("giới hạn")) return "Chờ chút nhé!";
+  return "Có lỗi rồi!";
+}
+
 export default function AuthScreen({
   user,
   recoveryMode = false,
   onPrepareGuestMigration,
   onRecoveryDone,
+  onHold,
 }: Props) {
   const [mode, setMode] = useState<Mode>(recoveryMode ? "recovery" : user?.is_anonymous ? "upgrade" : "login");
   const [name, setName] = useState("");
@@ -51,7 +67,9 @@ export default function AuthScreen({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setErrorText] = useState("");
+  const [success, setSuccess] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
@@ -81,6 +99,22 @@ export default function AuthScreen({
     }
   }, [recoveryMode, user]);
 
+  // Every failure shakes the card and flashes the fields red, even for a repeated message.
+  const setError = (message: string) => {
+    setErrorText(message);
+    const card = cardRef.current;
+    if (!message || !card) return;
+    card.classList.remove("is-error");
+    void card.offsetWidth;
+    card.classList.add("is-error");
+    window.setTimeout(() => card.classList.remove("is-error"), 900);
+  };
+
+  const celebrate = () => {
+    setSuccess(true);
+    window.setTimeout(() => onHold?.(false), CELEBRATION_MS);
+  };
+
   const resetFeedback = () => {
     setError("");
     setNotice("");
@@ -97,6 +131,7 @@ export default function AuthScreen({
     e.preventDefault();
     resetFeedback();
     setBusy(true);
+    onHold?.(true);
 
     const { error: authError } = await supabase.auth.signInWithPassword({
       email: email.trim(),
@@ -104,7 +139,12 @@ export default function AuthScreen({
     });
 
     setBusy(false);
-    if (authError) setError(friendlyError(authError.message));
+    if (authError) {
+      onHold?.(false);
+      setError(friendlyError(authError.message));
+      return;
+    }
+    celebrate();
   }
 
   async function register(e: FormEvent) {
@@ -121,6 +161,7 @@ export default function AuthScreen({
     }
 
     setBusy(true);
+    onHold?.(true);
     const { data, error: authError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
@@ -131,6 +172,7 @@ export default function AuthScreen({
     });
     setBusy(false);
 
+    if (authError || !data.session) onHold?.(false);
     if (authError) {
       setError(friendlyError(authError.message));
       return;
@@ -140,6 +182,7 @@ export default function AuthScreen({
       setNotice("Tài khoản đã được tạo. Hãy mở email xác nhận, sau đó quay lại đăng nhập. Dữ liệu guest đã được giữ tạm trên trình duyệt và sẽ chuyển sau khi bạn đăng nhập.");
     } else {
       setNotice("Tạo tài khoản thành công. Đang chuyển dữ liệu cũ vào tài khoản...");
+      celebrate();
     }
   }
 
@@ -217,32 +260,28 @@ export default function AuthScreen({
 
   return (
     <main className="auth-page">
-      <section className="auth-showcase">
-        <div className="auth-brand">
-          <span className="logo-icon"><BookOpen size={22} /></span>
-          <div><strong>LexiBloom</strong><span>Vocabulary that stays with you</span></div>
-        </div>
-        <div className="auth-showcase-copy">
-          <span className="auth-kicker"><Sparkles size={15} /> LEARN • REVIEW • REMEMBER</span>
-          <h1>Một tài khoản.<br />Toàn bộ từ vựng của bạn.</h1>
-          <p>Đăng nhập trên laptop, điện thoại hoặc máy khác và tiếp tục đúng tiến độ học đã lưu trên Supabase.</p>
-          <div className="auth-benefits">
-            <div><CheckCircle2 size={18} /><span><strong>Lưu lâu dài</strong><small>Từ vựng và lịch sử ôn tập nằm trên cloud.</small></span></div>
-            <div><CheckCircle2 size={18} /><span><strong>Đồng bộ realtime</strong><small>Cùng một tài khoản trên nhiều thiết bị.</small></span></div>
-            <div><CheckCircle2 size={18} /><span><strong>Dữ liệu riêng tư</strong><small>RLS chỉ cho phép user đọc dữ liệu của chính mình.</small></span></div>
-          </div>
-        </div>
-        <div className="auth-quote">“A little progress each day adds up to big results.”</div>
-      </section>
+      <header className="auth-brand">
+        <Logo size={48} tagline="Learn English, one word at a time" />
+      </header>
 
-      <section className="auth-panel-wrap">
-        <div className="auth-card">
+      <AuthMascots passwordVisible={showPassword} busy={busy} error={error} sign={errorSign(error)} notice={notice} celebrate={success}>
+        <div ref={cardRef} className={`auth-card${success ? " is-success" : ""}`}>
+          {success && (
+            <div className="auth-success" role="status">
+              <svg className="success-check" viewBox="0 0 64 64" aria-hidden="true">
+                <circle cx="32" cy="32" r="28" />
+                <path d="M19 33 L28 42 L46 23" />
+              </svg>
+              <strong>{mode === "register" ? "Tạo tài khoản thành công!" : "Đăng nhập thành công!"}</strong>
+              <span>Chào mừng bạn đến với TV-English</span>
+            </div>
+          )}
           {mode === "login" && (
             <>
               <div className="auth-heading"><span className="auth-icon"><LockKeyhole size={20} /></span><div><h2>Đăng nhập</h2><p>Mở lại kho từ vựng và tiến độ học của bạn.</p></div></div>
               <form className="auth-form" onSubmit={login}>
                 <Field label="Email"><Mail size={17} /><input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></Field>
-                <Field label="Mật khẩu"><LockKeyhole size={17} /><input type={showPassword ? "text" : "password"} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" /><button type="button" className="password-toggle" onClick={() => setShowPassword((v) => !v)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></Field>
+                <Field label="Mật khẩu"><LockKeyhole size={17} /><input type={showPassword ? "text" : "password"} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" /><button type="button" className="password-toggle" aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"} onMouseDown={(e) => e.preventDefault()} onClick={() => setShowPassword((v) => !v)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></Field>
                 <button type="button" className="auth-link forgot-link" onClick={() => switchMode("forgot")}>Quên mật khẩu?</button>
                 <Feedback error={error} notice={notice} />
                 <button className="auth-submit" disabled={busy}>{busy ? <Loader2 className="spin" size={18} /> : <LockKeyhole size={17} />} Đăng nhập</button>
@@ -256,9 +295,9 @@ export default function AuthScreen({
               <button className="auth-back" onClick={() => switchMode("login")}><ArrowLeft size={16} /> Quay lại đăng nhập</button>
               <div className="auth-heading"><span className="auth-icon"><UserPlus size={20} /></span><div><h2>Tạo tài khoản</h2><p>Từ vựng sẽ được gắn với tài khoản và đồng bộ giữa các thiết bị.</p></div></div>
               <form className="auth-form" onSubmit={register}>
-                <label className="auth-label"><span>Tên hiển thị</span><div className="auth-input"><UserPlus size={17} /><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Tên của bạn" /></div></label>
+                <label className="auth-label"><span>Tên hiển thị</span><div className="auth-input"><UserPlus size={17} /><input autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Tên của bạn" /></div></label>
                 <Field label="Email"><Mail size={17} /><input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></Field>
-                <Field label="Mật khẩu"><LockKeyhole size={17} /><input type={showPassword ? "text" : "password"} autoComplete="new-password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Ít nhất 8 ký tự" /><button type="button" className="password-toggle" onClick={() => setShowPassword((v) => !v)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></Field>
+                <Field label="Mật khẩu"><LockKeyhole size={17} /><input type={showPassword ? "text" : "password"} autoComplete="new-password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Ít nhất 8 ký tự" /><button type="button" className="password-toggle" aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"} onMouseDown={(e) => e.preventDefault()} onClick={() => setShowPassword((v) => !v)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></Field>
                 <Field label="Nhập lại mật khẩu"><ShieldCheck size={17} /><input type={showPassword ? "text" : "password"} autoComplete="new-password" required minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Nhập lại mật khẩu" /></Field>
                 <Feedback error={error} notice={notice} />
                 <button className="auth-submit" disabled={busy}>{busy ? <Loader2 className="spin" size={18} /> : <UserPlus size={17} />} Tạo tài khoản</button>
@@ -280,7 +319,7 @@ export default function AuthScreen({
 
           {mode === "upgrade" && (
             <>
-              <div className="auth-heading"><span className="auth-icon"><ShieldCheck size={20} /></span><div><h2>Chuyển dữ liệu sang tài khoản</h2><p>Không dùng Manual Linking nữa. LexiBloom sẽ sao lưu dữ liệu guest trong trình duyệt, sau đó chuyển sang tài khoản thật khi bạn đăng nhập.</p></div></div>
+              <div className="auth-heading"><span className="auth-icon"><ShieldCheck size={20} /></span><div><h2>Chuyển dữ liệu sang tài khoản</h2><p>Không dùng Manual Linking nữa. TV-English sẽ sao lưu dữ liệu guest trong trình duyệt, sau đó chuyển sang tài khoản thật khi bạn đăng nhập.</p></div></div>
               <div className="guest-data-note"><ShieldCheck size={19} /><div><strong>Giữ deck, vocabulary và lịch sử ôn</strong><span>Dữ liệu sẽ được copy sang user_id của tài khoản mới sau khi đăng nhập thành công.</span></div></div>
               <form className="auth-form" onSubmit={keepGuestDataAndCreateAccount}>
                 <Field label="Email tài khoản mới"><Mail size={17} /><input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></Field>
@@ -297,7 +336,7 @@ export default function AuthScreen({
             <>
               <div className="auth-heading"><span className="auth-icon"><ShieldCheck size={20} /></span><div><h2>Tạo mật khẩu mới</h2><p>Đặt mật khẩu mới cho tài khoản của bạn.</p></div></div>
               <form className="auth-form" onSubmit={updatePassword}>
-                <Field label="Mật khẩu mới"><LockKeyhole size={17} /><input type={showPassword ? "text" : "password"} autoComplete="new-password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Ít nhất 8 ký tự" /><button type="button" className="password-toggle" onClick={() => setShowPassword((v) => !v)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></Field>
+                <Field label="Mật khẩu mới"><LockKeyhole size={17} /><input type={showPassword ? "text" : "password"} autoComplete="new-password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Ít nhất 8 ký tự" /><button type="button" className="password-toggle" aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"} onMouseDown={(e) => e.preventDefault()} onClick={() => setShowPassword((v) => !v)}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></Field>
                 <Field label="Nhập lại mật khẩu"><ShieldCheck size={17} /><input type={showPassword ? "text" : "password"} autoComplete="new-password" required minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Nhập lại mật khẩu" /></Field>
                 <Feedback error={error} notice={notice} />
                 <button className="auth-submit" disabled={busy}>{busy ? <Loader2 className="spin" size={18} /> : <ShieldCheck size={17} />} Lưu mật khẩu</button>
@@ -307,7 +346,7 @@ export default function AuthScreen({
 
           {isPasswordMode && <p className="auth-footnote">Mật khẩu được Supabase Auth xử lý; app không lưu mật khẩu trong bảng vocabulary.</p>}
         </div>
-      </section>
+      </AuthMascots>
     </main>
   );
 }

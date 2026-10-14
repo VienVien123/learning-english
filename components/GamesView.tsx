@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, Check, Flame, Gamepad2, Headphones, Keyboard, LayoutGrid,
   RotateCcw, Sparkles, Timer, Trophy, Volume2, X, Zap
@@ -8,6 +8,24 @@ import {
 import type { UserProgress, Vocabulary } from "@/lib/types";
 import { DAILY_GOAL, effectiveDailyAnswers, effectiveStreak, gameAccuracy, levelInfo } from "@/lib/gamification";
 import { speakEnglish } from "@/lib/speech";
+import { PeekCrew, SootBuddy, type CrewMember, type SignTone, type SootMood } from "./Soot";
+
+const GAME_CREW: CrewMember[] = [
+  { x: 9, size: 70, look: { bloom: "green", holdR: "star-pink" } },
+  { x: 25, size: 88, look: { hat: true }, bubble: true },
+  { x: 75, size: 96, look: { bloom: "pink", holdL: "star-yellow", holdR: "flower-yellow" }, bubble: true },
+  { x: 91, size: 68, look: { bloom: "yellow" } },
+];
+
+const LOBBY_CREW: CrewMember[] = [
+  { x: 64, size: 72, look: { bloom: "yellow", holdR: "star-pink" } },
+  { x: 78, size: 98, look: { hat: true, holdL: "star-yellow" } },
+  { x: 92, size: 70, look: { bloom: "pink" } },
+];
+
+const CHEERS = ["Đúng rồi!", "Giỏi quá!", "Chuẩn!", "Tuyệt!", "Great!"];
+
+type Reaction = { mood: SootMood; signs: (string | undefined)[]; tone: SignTone };
 
 type GameId = "quiz" | "typing" | "listening" | "match" | "speed";
 type AwardFn = (xp: number, correct: boolean) => void | Promise<void>;
@@ -47,6 +65,22 @@ export default function GamesView({ words, progress, onActivity }: {
   const [sessionXp, setSessionXp] = useState(0);
   const [combo, setCombo] = useState(0);
   const [bestCombo, setBestCombo] = useState(0);
+  const [reaction, setReaction] = useState<Reaction | null>(null);
+  const [cheer, setCheer] = useState(0);
+  const reactionTimer = useRef(0);
+
+  useEffect(() => () => window.clearTimeout(reactionTimer.current), []);
+
+  // The crew above the game board cheers for right answers and holds up signs for wrong ones.
+  function react(correct: boolean, nextCombo: number) {
+    const praise = CHEERS[Math.floor(Math.random() * CHEERS.length)];
+    setReaction(correct
+      ? { mood: "happy", signs: [undefined, nextCombo >= 3 ? `Combo x${nextCombo}!` : undefined, praise, undefined], tone: "good" }
+      : { mood: "error", signs: ["Oops!", undefined, "Sai rồi!", "✕"], tone: "bad" });
+    if (correct) setCheer((v) => v + 1);
+    window.clearTimeout(reactionTimer.current);
+    reactionTimer.current = window.setTimeout(() => setReaction(null), 1400);
+  }
   const level = levelInfo(progress.total_xp);
   const daily = effectiveDailyAnswers(progress);
   const streak = effectiveStreak(progress);
@@ -54,6 +88,7 @@ export default function GamesView({ words, progress, onActivity }: {
   const award: AwardFn = async (xp, correct) => {
     const actualXp = correct ? xp + Math.min(10, combo * 2) : 1;
     setSessionXp((v) => v + actualXp);
+    react(correct, correct ? combo + 1 : 0);
     if (correct) {
       setCombo((v) => {
         const next = v + 1;
@@ -82,11 +117,24 @@ export default function GamesView({ words, progress, onActivity }: {
           <div className="game-session-title"><selected.icon size={20} /><div><strong>{selected.title}</strong><span>{selected.subtitle}</span></div></div>
           <div className="session-metrics"><span><Zap size={15} /> {sessionXp} XP</span><span className={combo > 1 ? "hot" : ""}><Flame size={15} /> x{combo}</span></div>
         </div>
-        {active === "quiz" && <QuizGame words={words} award={award} />}
-        {active === "typing" && <TypingGame words={words} award={award} listening={false} />}
-        {active === "listening" && <TypingGame words={words} award={award} listening />}
-        {active === "match" && <MatchGame words={words} award={award} />}
-        {active === "speed" && <SpeedGame words={words} award={award} />}
+        <PeekCrew
+          className="game-peek"
+          members={GAME_CREW}
+          mood={reaction?.mood ?? "curious"}
+          signs={reaction?.signs}
+          signTone={reaction?.tone}
+          bubble={reaction?.mood === "happy" ? "♪" : "?"}
+          cheer={cheer}
+          ledge={84}
+        >
+          <div>
+            {active === "quiz" && <QuizGame words={words} award={award} />}
+            {active === "typing" && <TypingGame words={words} award={award} listening={false} />}
+            {active === "listening" && <TypingGame words={words} award={award} listening />}
+            {active === "match" && <MatchGame words={words} award={award} />}
+            {active === "speed" && <SpeedGame words={words} award={award} />}
+          </div>
+        </PeekCrew>
         <div className="session-footer-note">Best combo this session: <strong>🔥 x{bestCombo}</strong></div>
       </div>
     );
@@ -98,12 +146,14 @@ export default function GamesView({ words, progress, onActivity }: {
         <div><div className="eyebrow"><Sparkles size={14} /> PLAY & REMEMBER</div><h1>Vocabulary Games</h1><p>Turn recall practice into short, focused challenges. Every answer contributes to your streak and XP.</p></div>
       </div>
 
+      <PeekCrew members={LOBBY_CREW} signs={[undefined, "Let's play!"]} signTone="good" ledge={86}>
       <div className="game-progress-strip">
         <div><span className="game-progress-icon violet"><Trophy size={19} /></span><div><small>LEVEL</small><strong>{level.level}</strong><em>{progress.total_xp.toLocaleString()} XP total</em></div></div>
         <div><span className="game-progress-icon orange"><Flame size={19} /></span><div><small>STREAK</small><strong>{streak} days</strong><em>Best: {progress.best_streak}</em></div></div>
         <div><span className="game-progress-icon teal"><Zap size={19} /></span><div><small>DAILY</small><strong>{Math.min(daily, DAILY_GOAL)}/{DAILY_GOAL}</strong><em>{Math.min(100, Math.round(daily / DAILY_GOAL * 100))}% complete</em></div></div>
         <div><span className="game-progress-icon blue"><Check size={19} /></span><div><small>GAME ACCURACY</small><strong>{gameAccuracy(progress)}%</strong><em>{progress.game_answers} answers</em></div></div>
       </div>
+      </PeekCrew>
 
       <div className="level-track"><span style={{ width: `${level.percent}%` }} /><small>{level.currentXp} / {level.neededXp} XP to next level</small></div>
 
@@ -256,7 +306,7 @@ function SpeedGame({ words, award }: { words: Vocabulary[]; award: AwardFn }) {
 }
 
 function GameEmpty({ text = "Add some vocabulary first to play this game." }: { text?: string }) {
-  return <div className="game-stage game-empty"><Gamepad2 size={38} /><strong>Not enough vocabulary yet</strong><span>{text}</span></div>;
+  return <div className="game-stage game-empty"><SootBuddy size={70} mood="curious" tool="magnifier" look={{ hat: true }} /><strong>Not enough vocabulary yet</strong><span>{text}</span></div>;
 }
 
 export function AchievementsView({ words, progress }: { words: Vocabulary[]; progress: UserProgress }) {

@@ -1,9 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { RotateCcw, Volume2, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { RotateCcw, Volume2, ChevronLeft, ChevronRight } from "lucide-react";
 import type { ReviewRating, Vocabulary } from "@/lib/types";
 import { speakEnglish } from "@/lib/speech";
+import { PeekCrew, SootBuddy, type CrewMember, type SignTone, type SootMood } from "./Soot";
+
+const STUDY_CREW: CrewMember[] = [
+  { x: 12, size: 70, look: { bloom: "green" }, tool: "magnifier" },
+  { x: 30, size: 90, look: { hat: true }, tool: "binoculars", bubble: true },
+  { x: 70, size: 96, look: { bloom: "pink", holdR: "star-yellow" }, tool: "spyglass", bubble: true },
+  { x: 88, size: 70, look: { bloom: "yellow" }, tool: "binoculars" },
+];
+
+type Reaction = { mood: SootMood; signs?: (string | undefined)[]; tone?: SignTone };
+
+// How the crew reacts to each rating: Again, Hard, Good, Easy.
+const REACTIONS: Reaction[] = [
+  { mood: "error", signs: ["Oops!", undefined, "Ôn lại nhé!", undefined] },
+  { mood: "idle", signs: [undefined, "Cố lên!", undefined, undefined], tone: "good" },
+  { mood: "happy", signs: [undefined, undefined, "Giỏi lắm!", undefined], tone: "good" },
+  { mood: "happy", signs: ["Wow!", undefined, "Dễ ợt!", "★"], tone: "good" },
+];
 
 export default function FlashcardStudy({
   words,
@@ -15,6 +33,11 @@ export default function FlashcardStudy({
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [reaction, setReaction] = useState<Reaction | null>(null);
+  const [cheer, setCheer] = useState(0);
+  const reactionTimer = useRef(0);
+
+  useEffect(() => () => window.clearTimeout(reactionTimer.current), []);
 
   useEffect(() => {
     setIndex(0);
@@ -26,7 +49,11 @@ export default function FlashcardStudy({
   if (!current) {
     return (
       <div className="empty-study">
-        <div className="success-orb"><Sparkles size={34} /></div>
+        <div className="soot-crew-row">
+          <SootBuddy size={52} mood="happy" look={{ bloom: "green", holdL: "star-pink" }} />
+          <SootBuddy size={72} mood="happy" look={{ hat: true, holdR: "star-yellow" }} />
+          <SootBuddy size={52} mood="happy" look={{ bloom: "pink", holdR: "flower-yellow" }} />
+        </div>
         <h2>You&apos;re all caught up ✨</h2>
         <p>No cards are due right now. Add more words or come back when the next review is ready.</p>
       </div>
@@ -43,6 +70,10 @@ export default function FlashcardStudy({
 
   async function rate(rating: ReviewRating) {
     setBusy(true);
+    setReaction(REACTIONS[rating]);
+    if (rating >= 2) setCheer((v) => v + 1);
+    window.clearTimeout(reactionTimer.current);
+    reactionTimer.current = window.setTimeout(() => setReaction(null), 1500);
     try {
       await onReview(current, rating);
       setRevealed(false);
@@ -63,6 +94,16 @@ export default function FlashcardStudy({
         <button className="button secondary compact" onClick={() => { setIndex(0); setRevealed(false); }}><RotateCcw size={16} /> Restart</button>
       </div>
 
+      <PeekCrew
+        className="study-peek"
+        members={STUDY_CREW}
+        mood={reaction?.mood ?? (revealed ? "watching" : "curious")}
+        signs={reaction?.signs}
+        signTone={reaction?.tone}
+        bubble={reaction?.mood === "happy" ? "♪" : "?"}
+        cheer={cheer}
+        ledge={84}
+      >
       <div className={`flashcard ${revealed ? "revealed" : ""}`} onClick={toggleReveal}>
         <div className="card-glow" />
         <div className="flashcard-face">
@@ -87,6 +128,7 @@ export default function FlashcardStudy({
           <div className="card-footer">{revealed ? "Tap again to hide" : "Think first, then reveal"}</div>
         </div>
       </div>
+      </PeekCrew>
 
       {revealed ? (
         <div className="rating-row">
