@@ -12,17 +12,28 @@ import { supabase } from "@/lib/supabase";
 import type { Deck, ReviewRating, UserProgress, ViewName, Vocabulary } from "@/lib/types";
 import { getReviewUpdate, isDue, masteryLabel } from "@/lib/srs";
 import { DAILY_GOAL, effectiveDailyAnswers, effectiveStreak, emptyProgress, getWeakWords, levelInfo, localDateKey } from "@/lib/gamification";
-import WordModal, { type WordDraft } from "./WordModal";
+import dynamic from "next/dynamic";
+import type { WordDraft } from "./WordModal";
 import DeckModal, { type DeckDraft } from "./DeckModal";
-import FlashcardStudy from "./FlashcardStudy";
-import LessonPlayer from "./LessonPlayer";
 import { reviewKeyFor, useReviewIds } from "@/lib/reviewList";
 import { useSoundOn } from "@/lib/sound";
-import AuthScreen from "./AuthScreen";
 import { LogoMark } from "./Logo";
 import { SootBackdrop, SootBuddy, SootCrew, useSootEyes, type CrewMember } from "./Soot";
-import GamesView, { AchievementsView } from "./GamesView";
-import ImportWordsModal from "./ImportWordsModal";
+
+// Screens that aren't needed for the first paint load on demand, keeping the initial bundle small.
+const loadAuth = () => import("./AuthScreen");
+const loadFlashcards = () => import("./FlashcardStudy");
+const loadLesson = () => import("./LessonPlayer");
+const loadGames = () => import("./GamesView");
+const loadWordModal = () => import("./WordModal");
+const loadImport = () => import("./ImportWordsModal");
+const AuthScreen = dynamic(loadAuth, { loading: () => <BootScreen text="Loading…" /> });
+const FlashcardStudy = dynamic(loadFlashcards);
+const LessonPlayer = dynamic(loadLesson);
+const GamesView = dynamic(loadGames);
+const AchievementsView = dynamic(() => loadGames().then((m) => m.AchievementsView));
+const WordModal = dynamic(loadWordModal);
+const ImportWordsModal = dynamic(loadImport);
 
 const navItems: { id: ViewName; label: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -78,6 +89,10 @@ const HERO_CREW: CrewMember[] = [
   { x: 88, size: 70, look: { hat: true } },
 ];
 
+function BootScreen({ text }: { text: string }) {
+  return <div className="boot-screen"><LogoMark size={64} className="boot-logo" /><BootCrew /><p>{text}</p></div>;
+}
+
 function BootCrew() {
   return (
     <div className="boot-crew">
@@ -90,6 +105,22 @@ function BootCrew() {
 
 export default function VocabApp() {
   useSootEyes();
+
+  // Signed-out visitors will need the login screen right away: start fetching it now.
+  useEffect(() => {
+    try {
+      const hasSession = Object.keys(localStorage).some((k) => k.startsWith("sb-") && k.endsWith("-auth-token"));
+      if (!hasSession) void loadAuth();
+    } catch {}
+  }, []);
+
+  // Once the app is idle, fetch the on-demand screens in the background so opening them is instant.
+  useEffect(() => {
+    const preload = () => { void loadFlashcards(); void loadLesson(); void loadGames(); void loadWordModal(); };
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+    const id = idle ? idle(preload) : window.setTimeout(preload, 2500);
+    return () => { if (!idle) window.clearTimeout(id); };
+  }, []);
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [view, setView] = useState<ViewName>("dashboard");
@@ -640,7 +671,7 @@ export default function VocabApp() {
   }
 
   if (!authReady) {
-    return <div className="boot-screen"><LogoMark size={64} className="boot-logo" /><BootCrew /><p>Preparing your vocabulary space…</p></div>;
+    return <BootScreen text="Preparing your vocabulary space…" />;
   }
 
   if (!user || user.is_anonymous || recoveryMode || authHold) {
@@ -661,7 +692,7 @@ export default function VocabApp() {
   }
 
   if (loading) {
-    return <div className="boot-screen"><LogoMark size={64} className="boot-logo" /><BootCrew /><p>Loading your vocabulary…</p></div>;
+    return <BootScreen text="Loading your vocabulary…" />;
   }
 
   return (

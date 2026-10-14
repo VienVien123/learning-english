@@ -858,23 +858,28 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .glow-two { width: 420px; height: 420px; right: -120px; bottom: -140px; background: radial-gradient(circle, rgba(246, 201, 107, .22), transparent 68%); }
 .dust { position: absolute; width: var(--s); height: var(--s); margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2); animation: dust-enter .7s cubic-bezier(.2, .9, .3, 1.4) both; animation-delay: calc(var(--i) * 45ms + 400ms); }
 .dust-gather, .dust-move, .dust-bob, .dust-jump { display: block; width: 100%; height: 100%; }
-.dust-gather { --g: 0; --o: 0; transform: translate(calc(var(--gx, 0px) * var(--g) + var(--ox, 0px) * var(--o)), calc(var(--gy, 0px) * var(--g) + var(--oy, 0px) * var(--o))); filter: blur(2.6px); opacity: .5; transition: transform 1.1s cubic-bezier(.3, .8, .3, 1.05), filter .6s ease, opacity .6s ease; transition-delay: calc(var(--i) * 18ms), 0s, 0s; }
+.dust-gather { --g: 0; --o: 0; transform: translate(calc(var(--gx, 0px) * var(--g) + var(--ox, 0px) * var(--o)), calc(var(--gy, 0px) * var(--g) + var(--oy, 0px) * var(--o))); --blur: 2.6px; opacity: .5; transition: transform 1.1s cubic-bezier(.3, .8, .3, 1.05), opacity .6s ease; transition-delay: calc(var(--i) * 18ms), 0s; }
 .dust-move { transform: translate(var(--fx, 0px), var(--fy, 0px)); transition: transform .45s cubic-bezier(.2, .9, .3, 1.2); }
 .dust-bob { animation: var(--wander) var(--dur) ease-in-out infinite; animation-delay: var(--d); }
 .dust-jump { transform-origin: 50% 100%; animation: dust-idle-hop 4.2s ease-in-out infinite; animation-delay: calc(var(--d) * 1.6); }
 .dust-jump.hop { animation: dust-big-hop .65s cubic-bezier(.3, .7, .4, 1); }
-.dust .soot-svg { filter: none; }
+.dust .soot-svg { filter: blur(var(--blur)); transition: filter .6s ease; }
+.dust-jump { will-change: transform; }
+/* While a sprite is blurred its little details are invisible, so pause them to save repaints. */
+.dust .soot-eye, .dust .soot-arm, .dust .soot-leg { animation-play-state: paused; }
+.is-curious .dust .soot-eye, .is-shy .dust .soot-eye, .is-happy .dust .soot-eye, .is-error .dust .soot-eye, .dust.is-fleeing .soot-eye,
+.is-curious .dust .soot-arm, .is-happy .dust .soot-arm, .dust.is-fleeing .soot-arm { animation-play-state: running; }
 .dust.is-fleeing .dust-jump { animation: soot-shiver .3s ease-in-out infinite; }
 .dust .dust-jump.hop { animation: dust-big-hop .65s cubic-bezier(.3, .7, .4, 1); }
-.dust:has(.dust-jump.hop) .dust-gather { filter: none; opacity: 1; transition-duration: 1.1s, .15s, .15s; }
+.dust:has(.dust-jump.hop) .dust-gather { --blur: 0px; opacity: 1; transition-duration: 1.1s, .15s; }
 .dust.is-fleeing .soot-iris { transform: scale(.75); }
-.dust-far { opacity: .7; filter: blur(.6px); }
-:root[data-theme="dark"] .dust .soot-svg { filter: drop-shadow(0 0 1px rgba(160, 196, 255, .55)); }
+.dust-far { opacity: .7; }
+:root[data-theme="dark"] .dust .soot-svg { filter: blur(var(--blur)) drop-shadow(0 0 1px rgba(160, 196, 255, .55)); }
 .is-curious .dust-gather { --g: 1; }
 .is-shy .dust-gather { --o: 1; }
 /* Out of focus until the learner starts typing; sharp again when they run over. */
-.is-watching .dust-gather { filter: blur(1.2px); opacity: .78; }
-.is-curious .dust-gather, .is-shy .dust-gather, .is-busy .dust-gather, .is-error .dust-gather, .is-happy .dust-gather, .dust.is-fleeing .dust-gather { filter: none; opacity: 1; }
+.is-watching .dust-gather { --blur: 1.2px; opacity: .78; }
+.is-curious .dust-gather, .is-shy .dust-gather, .is-busy .dust-gather, .is-error .dust-gather, .is-happy .dust-gather, .dust.is-fleeing .dust-gather { --blur: 0px; opacity: 1; }
 .is-curious .dust .soot-leg, .is-shy .dust .soot-leg { animation: soot-leg-run .16s ease-in-out 10 alternate; }
 .is-curious .dust .leg-r, .is-shy .dust .leg-r { animation-delay: .08s; }
 .dust.is-fleeing .soot-leg { animation: soot-leg-run .14s ease-in-out infinite alternate; }
@@ -885,7 +890,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .is-error .dust-jump { animation: soot-shiver .35s ease-in-out 4; }
 .is-busy .dust-bob { animation-duration: calc(var(--dur) / 4); }
 .auth-ripple { position: absolute; width: 20px; height: 20px; margin: -10px 0 0 -10px; border: 3px solid color-mix(in srgb, var(--primary) 60%, transparent); border-radius: 50%; animation: auth-ripple .9s cubic-bezier(.2, .7, .3, 1) forwards; }
-.auth-chip { position: absolute; z-index: 1; padding: 9px 16px; border: 1px solid color-mix(in srgb, var(--surface) 80%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--surface) 78%, transparent); box-shadow: 0 14px 30px rgba(59, 89, 135, .12); color: var(--primary); font-size: 15px; font-weight: 800; letter-spacing: -.2px; pointer-events: auto; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: auth-chip-float 5s ease-in-out infinite, dust-enter .7s cubic-bezier(.2, .9, .3, 1.4) both; transition: scale .25s cubic-bezier(.2, .9, .3, 1.6), box-shadow .25s ease, background-color .25s ease, color .25s ease; }
+.auth-chip { position: absolute; z-index: 1; padding: 9px 16px; border: 1px solid color-mix(in srgb, var(--surface) 80%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: 0 14px 30px rgba(59, 89, 135, .12); color: var(--primary); font-size: 15px; font-weight: 800; letter-spacing: -.2px; pointer-events: auto; animation: auth-chip-float 5s ease-in-out infinite, dust-enter .7s cubic-bezier(.2, .9, .3, 1.4) both; transition: scale .25s cubic-bezier(.2, .9, .3, 1.6), box-shadow .25s ease, background-color .25s ease, color .25s ease; }
 .auth-chip:hover { scale: 1.14; color: #fff; background: var(--primary); box-shadow: 0 16px 34px color-mix(in srgb, var(--primary) 40%, transparent); }
 .auth-chip:active { scale: .96; }
 .chip-0 { left: 11%; top: 27%; rotate: -6deg; }
@@ -1053,8 +1058,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   border-radius: 32px;
   background: color-mix(in srgb, var(--surface) 95%, transparent);
   box-shadow: 0 1px 0 rgba(255, 255, 255, .7) inset, 0 30px 70px rgba(52, 82, 130, .14), 0 6px 16px rgba(52, 82, 130, .06);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   animation: auth-card-in .6s cubic-bezier(.2, .8, .25, 1) both;
 }
 :root[data-theme="dark"] .auth-card { box-shadow: 0 1px 0 rgba(255, 255, 255, .05) inset, 0 30px 70px rgba(0, 0, 0, .4); }
@@ -1075,7 +1078,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .confetti { position: absolute; left: 0; top: 0; display: grid; place-items: center; color: var(--c); font-size: 22px; line-height: 1; animation: confetti-burst 1.8s cubic-bezier(.12, .7, .3, 1) both; }
 .confetti-rect { width: 10px; height: 15px; border-radius: 3px; background: var(--c); }
 .confetti-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--c); }
-.is-celebrate .dust-gather { --g: 1; filter: none; opacity: 1; }
+.is-celebrate .dust-gather { --g: 1; --blur: 0px; opacity: 1; }
 .is-celebrate .soot { --rise: calc(var(--s) * var(--k) * -.16px); }
 .auth-heading { display: flex; align-items: center; gap: 16px; margin-bottom: 28px; }
 .auth-icon { width: 54px; height: 54px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 17px; color: var(--primary); background: var(--primary-soft); }
@@ -1159,7 +1162,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media (max-width: 760px) {
   .auth-page { justify-content: flex-start; padding: 24px 16px 40px; }
   .auth-brand { position: relative; top: auto; left: auto; margin-bottom: 8px; }
-  .auth-chip, .glow-two, .dust-wide-only { display: none; }
+  .auth-chip, .glow-two, .dust-wide-only, .auth-backdrop .dust:nth-of-type(even) { display: none; }
 }
 @media (max-width: 480px) {
   .auth-stage { --ledge: 100px; --k: .88; }
