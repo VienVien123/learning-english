@@ -8,6 +8,7 @@ import { isDue } from "@/lib/srs";
 import { useReviewIds } from "@/lib/reviewList";
 import { playSound } from "@/lib/sound";
 import { PeekCrew, SootBuddy, type CrewMember, type SignTone, type SootMood } from "./Soot";
+import PronounceButton from "./PronounceButton";
 
 type Mode = "due" | "review" | "all";
 type Verdict = "known" | "unknown";
@@ -338,6 +339,7 @@ export default function FlashcardStudy({
                         </>
                       )}
                       {current.example && <blockquote>{current.example}{current.example_translation && <span>{current.example_translation}</span>}</blockquote>}
+                      {revealed && <PronounceButton word={current.word} />}
                       <div className="fc-note">
                         {noteDraft === null ? (
                           <button className="fc-note-view" onClick={() => setNoteDraft(current.note ?? "")}>

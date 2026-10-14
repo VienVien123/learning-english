@@ -6,7 +6,7 @@ import {
   RotateCcw, Sparkles, Timer, Trophy, Volume2, X, Zap
 } from "lucide-react";
 import type { UserProgress, Vocabulary } from "@/lib/types";
-import { DAILY_GOAL, effectiveDailyAnswers, effectiveStreak, gameAccuracy, levelInfo } from "@/lib/gamification";
+import { DAILY_GOAL as DEFAULT_GOAL, effectiveDailyAnswers, effectiveStreak, gameAccuracy, levelInfo } from "@/lib/gamification";
 import { speakEnglish, speakEnglishAndWait } from "@/lib/speech";
 import { playSound } from "@/lib/sound";
 import { PeekCrew, SootBuddy, type CrewMember, type SignTone, type SootMood } from "./Soot";
@@ -57,7 +57,8 @@ function normalize(value: string) {
   return value.trim().toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ");
 }
 
-export default function GamesView({ words, progress, onActivity }: {
+export default function GamesView({ words, progress, onActivity, dailyGoal = DEFAULT_GOAL }: {
+  dailyGoal?: number;
   words: Vocabulary[];
   progress: UserProgress;
   onActivity: (xp: number, correct: boolean, isGame?: boolean) => void | Promise<void>;
@@ -152,7 +153,7 @@ export default function GamesView({ words, progress, onActivity }: {
       <div className="game-progress-strip">
         <div><span className="game-progress-icon violet"><Trophy size={19} /></span><div><small>LEVEL</small><strong>{level.level}</strong><em>{progress.total_xp.toLocaleString()} XP total</em></div></div>
         <div><span className="game-progress-icon orange"><Flame size={19} /></span><div><small>STREAK</small><strong>{streak} days</strong><em>Best: {progress.best_streak}</em></div></div>
-        <div><span className="game-progress-icon teal"><Zap size={19} /></span><div><small>DAILY</small><strong>{Math.min(daily, DAILY_GOAL)}/{DAILY_GOAL}</strong><em>{Math.min(100, Math.round(daily / DAILY_GOAL * 100))}% complete</em></div></div>
+        <div><span className="game-progress-icon teal"><Zap size={19} /></span><div><small>DAILY</small><strong>{Math.min(daily, dailyGoal)}/{dailyGoal}</strong><em>{Math.min(100, Math.round(daily / dailyGoal * 100))}% complete</em></div></div>
         <div><span className="game-progress-icon blue"><Check size={19} /></span><div><small>GAME ACCURACY</small><strong>{gameAccuracy(progress)}%</strong><em>{progress.game_answers} answers</em></div></div>
       </div>
       </PeekCrew>

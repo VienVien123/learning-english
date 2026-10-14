@@ -4,19 +4,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen, Brain, ChartNoAxesCombined, Check, ChevronDown, FolderOpen, Heart,
   LayoutDashboard, Library, Loader2, Moon, MoreHorizontal, Pencil, Plus, Search, Sparkles,
-  Sun, Trash2, Volume2, VolumeX, Wifi, WifiOff, X, Zap, LogOut, Gamepad2, Trophy, FileUp,
+  Sun, Trash2, Volume2, VolumeX, Wifi, WifiOff, Download, X, Zap, LogOut, Gamepad2, Trophy, FileUp,
   Menu, Pin, PinOff
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import type { Deck, ReviewRating, UserProgress, ViewName, Vocabulary } from "@/lib/types";
 import { getReviewUpdate, isDue, masteryLabel } from "@/lib/srs";
-import { DAILY_GOAL, effectiveDailyAnswers, effectiveStreak, emptyProgress, getWeakWords, levelInfo, localDateKey } from "@/lib/gamification";
+import { effectiveDailyAnswers, effectiveStreak, emptyProgress, getWeakWords, levelInfo, localDateKey } from "@/lib/gamification";
 import dynamic from "next/dynamic";
 import type { WordDraft } from "./WordModal";
 import DeckModal, { type DeckDraft } from "./DeckModal";
 import { reviewKeyFor, useReviewIds } from "@/lib/reviewList";
 import { useSoundOn } from "@/lib/sound";
+import { GOAL_OPTIONS, useDailyGoal } from "@/lib/dailyGoal";
+import ActivityHeatmap from "./ActivityHeatmap";
+import { clearOfflineData, useInstallPrompt } from "@/lib/pwa";
 import { LogoMark } from "./Logo";
 import { SootBackdrop, SootBuddy, SootCrew, useSootEyes, type CrewMember } from "./Soot";
 
@@ -149,6 +152,8 @@ export default function VocabApp() {
   const [lessonIds, setLessonIds] = useState<string[] | null>(null);
   const reviewKey = reviewKeyFor(user?.id ?? "guest");
   const [soundOn, toggleSound] = useSoundOn();
+  const [dailyGoal, setDailyGoal] = useDailyGoal(user?.id ?? "guest");
+  const { canInstall, install } = useInstallPrompt();
   const [reviewIds] = useReviewIds(reviewKey);
   const startLesson = (deckId: string) => { setLessonIds(null); setLessonDeck(deckId); };
   const startReviewLesson = (ids: string[]) => { setLessonIds(ids); setLessonDeck("review"); };
@@ -660,6 +665,7 @@ export default function VocabApp() {
 
 
   async function handleSignOut() {
+    clearOfflineData();
     const { error } = await supabase.auth.signOut();
     if (error) {
       showToast(error.message);
@@ -729,6 +735,7 @@ export default function VocabApp() {
         </div>
 
         <div className="sidebar-bottom">
+          {canInstall && <button className="nav-item compact-row install-app" onClick={() => void install()}><Download size={18} /><span>Cài ứng dụng TV-English</span></button>}
           <button className="nav-item compact-row" onClick={toggleTheme}>{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}<span>{theme === "light" ? "Dark mode" : "Light mode"}</span></button>
           <div className="profile-chip"><span className="avatar">{(user.user_metadata?.display_name || user.email || "U").slice(0, 1).toUpperCase()}</span><div><strong>{user.user_metadata?.display_name || user.email?.split("@")[0] || "Learner"}</strong><small>{user.email || (online ? "Synced with Supabase" : "Offline")}</small></div><button className="profile-signout" onClick={handleSignOut} title="Sign out"><LogOut size={15} /></button></div>
         </div>
@@ -744,6 +751,7 @@ export default function VocabApp() {
           <div className="topbar-actions">
             <span className={`sync-status ${online ? "online" : ""}`}>{syncing ? <Loader2 className="spin" size={14} /> : online ? <Check size={14} /> : <WifiOff size={14} />}{syncing ? "Syncing" : online ? "Live sync" : "Offline"}</span>
             <button className="icon-btn" onClick={toggleSound} aria-label={soundOn ? "Tắt hiệu ứng âm thanh" : "Bật hiệu ứng âm thanh"} title={soundOn ? "Tắt hiệu ứng âm thanh" : "Bật hiệu ứng âm thanh"}>{soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
+            {canInstall && <button className="icon-btn install-app" onClick={() => void install()} aria-label="Cài ứng dụng" title="Cài ứng dụng TV-English"><Download size={18} /></button>}
             <button className="icon-btn theme-mobile" onClick={toggleTheme}>{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button>
             <button className="icon-btn account-logout" onClick={handleSignOut} title={`Sign out ${user.email ?? ""}`}><LogOut size={17} /></button>
             <button className="button primary" onClick={() => { setEditingWord(null); setWordModalOpen(true); }}><Plus size={17} /> Add word</button>
@@ -751,7 +759,7 @@ export default function VocabApp() {
         </header>
 
         <section className="content">
-          {view === "dashboard" && <Dashboard name={user.user_metadata?.display_name || user.email?.split("@")[0] || "Learner"} words={words} decks={decks} stats={stats} progress={progress} weakWords={weakWords} setView={setView} openDeck={(id) => { setDeckFilter(id); setView("words"); }} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} startLesson={startLesson} />}
+          {view === "dashboard" && <Dashboard name={user.user_metadata?.display_name || user.email?.split("@")[0] || "Learner"} words={words} decks={decks} stats={stats} progress={progress} weakWords={weakWords} setView={setView} openDeck={(id) => { setDeckFilter(id); setView("words"); }} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} startLesson={startLesson} userId={user.id} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />}
           {view === "learn" && <LearnHub words={words} decks={decks} startLesson={startLesson} reviewCount={words.filter((w) => reviewIds.includes(w.id)).length} startReview={() => startReviewLesson(reviewIds)} />}
           {view === "words" && <VocabularyView words={filteredWords} decks={decks} query={query} setQuery={setQuery} deckFilter={deckFilter} setDeckFilter={setDeckFilter} levelFilter={levelFilter} setLevelFilter={setLevelFilter} onEdit={(w) => { setEditingWord(w); setWordModalOpen(true); }} onDelete={deleteWord} onFavorite={toggleFavorite} onImport={() => setImportModalOpen(true)} onAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
           {view === "flashcards" && (
@@ -760,9 +768,9 @@ export default function VocabApp() {
               <FlashcardStudy words={deckWords} reviewKey={reviewKey} onReview={reviewWord} onSaveNote={saveNote} onPractice={startReviewLesson} />
             </div>
           )}
-          {view === "games" && <GamesView words={words} progress={progress} onActivity={recordActivity} />}
+          {view === "games" && <GamesView words={words} progress={progress} onActivity={recordActivity} dailyGoal={dailyGoal} />}
           {view === "decks" && <DecksView decks={decks} words={words} onAdd={() => setDeckModalOpen(true)} onDelete={deleteDeck} onOpen={(id) => { setDeckFilter(id); setView("words"); }} />}
-          {view === "stats" && <StatsView words={words} decks={decks} stats={stats} />}
+          {view === "stats" && <StatsView words={words} decks={decks} stats={stats} userId={user.id} dailyGoal={dailyGoal} todayAnswers={effectiveDailyAnswers(progress)} />}
           {view === "achievements" && <AchievementsView words={words} progress={progress} />}
         </section>
       </main>
@@ -775,6 +783,7 @@ export default function VocabApp() {
         <LessonPlayer
           words={lessonIds ? words.filter((w) => lessonIds.includes(w.id)) : lessonDeck === "all" ? words : words.filter((w) => w.deck_id === lessonDeck)}
           title={lessonIds ? "Sổ Cần ôn" : lessonDeck === "all" ? "Tất cả bộ từ" : decks.find((d) => d.id === lessonDeck)?.name ?? "Bộ từ"}
+          pool={words}
           reviewKey={reviewKey}
           review={!!lessonIds}
           onReview={reviewWord}
@@ -810,7 +819,7 @@ function PageHeader({ eyebrow, title, subtitle, action }: { eyebrow: string; tit
   return <div className="page-header"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{subtitle}</p></div>{action}</div>;
 }
 
-function Dashboard({ name, words, decks, stats, progress, weakWords, setView, openDeck, openAdd, startLesson }: { startLesson: (deckId: string) => void; name: string; words: Vocabulary[]; decks: Deck[]; stats: { total: number; mastered: number; due: number; reviewed: number; accuracy: number; mastery: number }; progress: UserProgress; weakWords: Vocabulary[]; setView: (v: ViewName) => void; openDeck: (id: string) => void; openAdd: () => void }) {
+function Dashboard({ name, words, decks, stats, progress, weakWords, setView, openDeck, openAdd, startLesson, userId, dailyGoal, setDailyGoal }: { startLesson: (deckId: string) => void; userId: string; dailyGoal: number; setDailyGoal: (goal: number) => void; name: string; words: Vocabulary[]; decks: Deck[]; stats: { total: number; mastered: number; due: number; reviewed: number; accuracy: number; mastery: number }; progress: UserProgress; weakWords: Vocabulary[]; setView: (v: ViewName) => void; openDeck: (id: string) => void; openAdd: () => void }) {
   const recent = words.slice(0, 4);
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
   const streak = effectiveStreak(progress);
@@ -840,9 +849,13 @@ function Dashboard({ name, words, decks, stats, progress, weakWords, setView, op
         <LearningPath decks={decks} words={words} openDeck={startLesson} onBrowse={() => setView("decks")} />
         <aside className="learn-aside">
           <section className="lesson-goal-card">
-            <div className="lesson-goal-head"><span className="lesson-goal-icon">🔥</span><span>DAILY GOAL</span><strong>{Math.min(effectiveDailyAnswers(progress), DAILY_GOAL)}/{DAILY_GOAL}</strong></div>
-            <div className="lesson-goal-track"><span style={{ width: `${Math.min(100, Math.round(effectiveDailyAnswers(progress) / DAILY_GOAL * 100))}%` }} /></div>
-            <p>{Math.max(0, DAILY_GOAL - effectiveDailyAnswers(progress))} answers to keep your learning streak alive.</p>
+            <div className="lesson-goal-head"><span className="lesson-goal-icon">🔥</span><span>DAILY GOAL</span><strong>{Math.min(effectiveDailyAnswers(progress), dailyGoal)}/{dailyGoal}</strong></div>
+            <div className="lesson-goal-track"><span style={{ width: `${Math.min(100, Math.round(effectiveDailyAnswers(progress) / dailyGoal * 100))}%` }} /></div>
+            <p>{effectiveDailyAnswers(progress) >= dailyGoal ? "Đã đạt mục tiêu hôm nay — tuyệt vời! 🎉" : `Còn ${dailyGoal - effectiveDailyAnswers(progress)} câu nữa để đạt mục tiêu hôm nay.`}</p>
+            <div className="goal-picker" role="group" aria-label="Mục tiêu mỗi ngày">
+              <span>Mục tiêu:</span>
+              {GOAL_OPTIONS.map((g) => <button key={g} className={g === dailyGoal ? "on" : ""} aria-pressed={g === dailyGoal} onClick={() => setDailyGoal(g)}>{g}</button>)}
+            </div>
             <button className="text-button" onClick={() => setView("games")}>Practice now →</button>
           </section>
           <section className="learn-stats-card">
@@ -856,6 +869,11 @@ function Dashboard({ name, words, decks, stats, progress, weakWords, setView, op
           </div>
         </aside>
       </div>
+
+      <section className="panel heatmap-panel">
+        <div className="panel-title"><div><span>LỊCH HỌC</span><h2>6 tháng gần đây</h2></div><button className="text-button" onClick={() => setView("stats")}>Xem cả năm →</button></div>
+        <ActivityHeatmap userId={userId} goal={dailyGoal} weeks={26} today={effectiveDailyAnswers(progress)} refreshKey={stats.reviewed} compact />
+      </section>
 
       <GamificationDashboard progress={progress} weakWords={weakWords} setView={setView} />
 
@@ -1032,11 +1050,15 @@ function DecksView({ decks, words, onAdd, onDelete, onOpen }: { decks: Deck[]; w
   </>;
 }
 
-function StatsView({ words, decks, stats }: { words: Vocabulary[]; decks: Deck[]; stats: { total: number; mastered: number; due: number; reviewed: number; accuracy: number; mastery: number } }) {
+function StatsView({ words, decks, stats, userId, dailyGoal, todayAnswers }: { userId: string; dailyGoal: number; todayAnswers: number; words: Vocabulary[]; decks: Deck[]; stats: { total: number; mastered: number; due: number; reviewed: number; accuracy: number; mastery: number } }) {
   const levels = [0, 1, 2, 3, 4, 5].map((level) => ({ level, count: words.filter((w) => w.mastery_level === level).length }));
   const max = Math.max(1, ...levels.map((x) => x.count));
   return <>
     <PageHeader eyebrow="INSIGHTS" title="Learning progress" subtitle="See how your vocabulary is moving from new to mastered." />
+    <section className="panel heatmap-panel">
+      <div className="panel-title"><div><span>LỊCH HỌC</span><h2>Một năm học tập</h2></div></div>
+      <ActivityHeatmap userId={userId} goal={dailyGoal} today={todayAnswers} refreshKey={stats.reviewed} />
+    </section>
     <div className="stat-grid">
       <StatCard icon={<Library size={20} />} label="Vocabulary" value={stats.total} hint="all saved words" tone="violet" />
       <StatCard icon={<Check size={20} />} label="Mastered" value={stats.mastered} hint="level 5 words" tone="teal" />
