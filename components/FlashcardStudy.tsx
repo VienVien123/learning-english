@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ArrowLeftRight, Check, Keyboard, Lightbulb, NotebookPen, RotateCcw, Shuffle, Volume2, X } from "lucide-react";
+import { ArrowLeftRight, Check, Keyboard, Lightbulb, NotebookPen, PenLine, RotateCcw, Shuffle, Volume2, X } from "lucide-react";
 import type { ReviewRating, Vocabulary } from "@/lib/types";
 import { speakEnglish } from "@/lib/speech";
 import { isDue } from "@/lib/srs";
+import { useReviewIds } from "@/lib/reviewList";
 import { PeekCrew, SootBuddy, type CrewMember, type SignTone, type SootMood } from "./Soot";
 
 type Mode = "due" | "review" | "all";
@@ -59,6 +60,7 @@ export default function FlashcardStudy({
   reviewKey,
   onReview,
   onSaveNote,
+  onPractice,
 }: {
   // Words in the selected deck.
   words: Vocabulary[];
@@ -66,10 +68,12 @@ export default function FlashcardStudy({
   reviewKey: string;
   onReview: (word: Vocabulary, rating: ReviewRating) => Promise<void>;
   onSaveNote: (word: Vocabulary, note: string) => Promise<void>;
+  // Opens the listen-and-write lesson for the given words.
+  onPractice?: (ids: string[]) => void;
 }) {
   const [mode, setMode] = useState<Mode>("due");
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
-  const [reviewIds, setReviewIds] = useState<string[]>([]);
+  const [reviewIds, updateReviewIds] = useReviewIds(reviewKey);
   const [queue, setQueue] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
   const [results, setResults] = useState<{ id: string; verdict: Verdict }[]>([]);
@@ -99,14 +103,6 @@ export default function FlashcardStudy({
     setPrefs(readJson(PREFS_KEY, DEFAULT_PREFS));
   }, []);
 
-  useEffect(() => {
-    try {
-      setReviewIds(JSON.parse(localStorage.getItem(reviewKey) || "[]"));
-    } catch {
-      setReviewIds([]);
-    }
-  }, [reviewKey]);
-
   useEffect(() => () => window.clearTimeout(reactionTimer.current), []);
 
   const updatePrefs = (patch: Partial<Prefs>) => {
@@ -116,14 +112,6 @@ export default function FlashcardStudy({
       return next;
     });
   };
-
-  const updateReviewIds = useCallback((fn: (ids: string[]) => string[]) => {
-    setReviewIds((prev) => {
-      const next = fn(prev);
-      try { localStorage.setItem(reviewKey, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, [reviewKey]);
 
   // Build a new session whenever the mode, deck or "restart" changes.
   useEffect(() => {
@@ -185,6 +173,8 @@ export default function FlashcardStudy({
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable]")) return;
+      // A lesson opened from here covers the page and owns the keyboard.
+      if (document.querySelector(".lesson")) return;
       if (!current) return;
       if (e.key === " " || e.key === "Enter") { e.preventDefault(); flip(); }
       else if (e.key === "ArrowLeft" || e.key === "1") grade("unknown");
@@ -265,6 +255,13 @@ export default function FlashcardStudy({
           <button className={prefs.autoSpeak ? "on" : ""} onClick={() => updatePrefs({ autoSpeak: !prefs.autoSpeak })} title="Tự phát âm khi lật thẻ"><Volume2 size={15} /> Tự đọc</button>
         </div>
       </div>
+
+      {mode === "review" && !customIds && reviewCount > 0 && onPractice && (
+        <div className="fc-practice">
+          <span>Muốn nhớ chắc hơn? Ôn {reviewCount} từ này bằng cách nghe rồi viết lại.</span>
+          <button className="button secondary compact" onClick={() => onPractice(reviewIds.filter((id) => byId.has(id)))}><PenLine size={15} /> Luyện nghe – viết</button>
+        </div>
+      )}
 
       {total > 0 && !finished && (
         <div className="fc-progress">
@@ -397,6 +394,7 @@ export default function FlashcardStudy({
           )}
           <div className="fc-summary-actions">
             {unknownIds.length > 0 && <button className="button primary" onClick={() => { setCustomIds(unknownIds); setRestart((v) => v + 1); }}><RotateCcw size={16} /> Học lại {unknownIds.length} từ chưa thuộc</button>}
+            {unknownIds.length > 0 && onPractice && <button className="button secondary" onClick={() => onPractice(unknownIds)}><PenLine size={16} /> Luyện nghe – viết</button>}
             <button className="button secondary" onClick={() => setRestart((v) => v + 1)}>Học lại cả phiên</button>
             {mode !== "review" && reviewCount > 0 && <button className="button secondary" onClick={() => switchMode("review")}>Mở sổ Cần ôn ({reviewCount})</button>}
           </div>

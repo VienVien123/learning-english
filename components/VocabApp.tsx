@@ -15,6 +15,8 @@ import { DAILY_GOAL, effectiveDailyAnswers, effectiveStreak, emptyProgress, getW
 import WordModal, { type WordDraft } from "./WordModal";
 import DeckModal, { type DeckDraft } from "./DeckModal";
 import FlashcardStudy from "./FlashcardStudy";
+import LessonPlayer from "./LessonPlayer";
+import { reviewKeyFor, useReviewIds } from "@/lib/reviewList";
 import AuthScreen from "./AuthScreen";
 import { LogoMark } from "./Logo";
 import { SootBackdrop, SootBuddy, SootCrew, useSootEyes, type CrewMember } from "./Soot";
@@ -23,6 +25,7 @@ import ImportWordsModal from "./ImportWordsModal";
 
 const navItems: { id: ViewName; label: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "learn", label: "Học từ mới", icon: Sparkles },
   { id: "words", label: "Vocabulary", icon: Library },
   { id: "flashcards", label: "Flashcards", icon: Brain },
   { id: "games", label: "Games", icon: Gamepad2 },
@@ -32,13 +35,14 @@ const navItems: { id: ViewName; label: string; icon: React.ElementType }[] = [
 ];
 
 const navGroups: { label: string; items: typeof navItems }[] = [
-  { label: "LEARN", items: navItems.filter(({ id }) => ["dashboard", "words", "decks"].includes(id)) },
+  { label: "LEARN", items: navItems.filter(({ id }) => ["dashboard", "learn", "words", "decks"].includes(id)) },
   { label: "PRACTICE", items: navItems.filter(({ id }) => ["flashcards", "games"].includes(id)) },
   { label: "PROGRESS", items: navItems.filter(({ id }) => ["stats", "achievements"].includes(id)) },
 ];
 
 const mobileNavLabels: Record<ViewName, string> = {
   dashboard: "Home",
+  learn: "Learn",
   words: "Words",
   flashcards: "Cards",
   games: "Games",
@@ -107,6 +111,14 @@ export default function VocabApp() {
   const [toast, setToast] = useState("");
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [authHold, setAuthHold] = useState(false);
+  // Deck id of the lesson on screen ("all" for every deck), or null when closed.
+  const [lessonDeck, setLessonDeck] = useState<string | null>(null);
+  // Fixed word list for a review lesson, captured when it starts.
+  const [lessonIds, setLessonIds] = useState<string[] | null>(null);
+  const reviewKey = reviewKeyFor(user?.id ?? "guest");
+  const [reviewIds] = useReviewIds(reviewKey);
+  const startLesson = (deckId: string) => { setLessonIds(null); setLessonDeck(deckId); };
+  const startReviewLesson = (ids: string[]) => { setLessonIds(ids); setLessonDeck("review"); };
   const currentUserIdRef = useRef<string | null>(null);
   const draftRestoreCheckedRef = useRef<string | null>(null);
 
@@ -705,12 +717,13 @@ export default function VocabApp() {
         </header>
 
         <section className="content">
-          {view === "dashboard" && <Dashboard name={user.user_metadata?.display_name || user.email?.split("@")[0] || "Learner"} words={words} decks={decks} stats={stats} progress={progress} weakWords={weakWords} setView={setView} openDeck={(id) => { setDeckFilter(id); setView("words"); }} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
+          {view === "dashboard" && <Dashboard name={user.user_metadata?.display_name || user.email?.split("@")[0] || "Learner"} words={words} decks={decks} stats={stats} progress={progress} weakWords={weakWords} setView={setView} openDeck={(id) => { setDeckFilter(id); setView("words"); }} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} startLesson={startLesson} />}
+          {view === "learn" && <LearnHub words={words} decks={decks} startLesson={startLesson} reviewCount={words.filter((w) => reviewIds.includes(w.id)).length} startReview={() => startReviewLesson(reviewIds)} />}
           {view === "words" && <VocabularyView words={filteredWords} decks={decks} query={query} setQuery={setQuery} deckFilter={deckFilter} setDeckFilter={setDeckFilter} levelFilter={levelFilter} setLevelFilter={setLevelFilter} onEdit={(w) => { setEditingWord(w); setWordModalOpen(true); }} onDelete={deleteWord} onFavorite={toggleFavorite} onImport={() => setImportModalOpen(true)} onAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
           {view === "flashcards" && (
             <div>
               <PageHeader eyebrow="FOCUS MODE" title="Flashcard session" subtitle="Lật thẻ, tự nhớ nghĩa rồi chọn Đã thuộc hoặc Chưa thuộc. Từ chưa thuộc được ghi vào sổ Cần ôn." action={<select className="clean-select" value={deckFilter} onChange={(e) => setDeckFilter(e.target.value)}><option value="all">All decks</option>{decks.map((d) => <option key={d.id} value={d.id}>{d.icon} {d.name}</option>)}</select>} />
-              <FlashcardStudy words={deckWords} reviewKey={`tv-english-review:${user.id}`} onReview={reviewWord} onSaveNote={saveNote} />
+              <FlashcardStudy words={deckWords} reviewKey={reviewKey} onReview={reviewWord} onSaveNote={saveNote} onPractice={startReviewLesson} />
             </div>
           )}
           {view === "games" && <GamesView words={words} progress={progress} onActivity={recordActivity} />}
@@ -724,6 +737,16 @@ export default function VocabApp() {
         {navItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} aria-current={view === item.id ? "page" : undefined} onClick={() => setView(item.id)}><Icon size={20} /><span>{mobileNavLabels[item.id]}</span></button>; })}
       </nav>
 
+      {lessonDeck && (
+        <LessonPlayer
+          words={lessonIds ? words.filter((w) => lessonIds.includes(w.id)) : lessonDeck === "all" ? words : words.filter((w) => w.deck_id === lessonDeck)}
+          title={lessonIds ? "Sổ Cần ôn" : lessonDeck === "all" ? "Tất cả bộ từ" : decks.find((d) => d.id === lessonDeck)?.name ?? "Bộ từ"}
+          reviewKey={reviewKey}
+          review={!!lessonIds}
+          onReview={reviewWord}
+          onClose={() => setLessonDeck(null)}
+        />
+      )}
       <WordModal
         open={wordModalOpen}
         decks={decks}
@@ -753,7 +776,7 @@ function PageHeader({ eyebrow, title, subtitle, action }: { eyebrow: string; tit
   return <div className="page-header"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{subtitle}</p></div>{action}</div>;
 }
 
-function Dashboard({ name, words, decks, stats, progress, weakWords, setView, openDeck, openAdd }: { name: string; words: Vocabulary[]; decks: Deck[]; stats: { total: number; mastered: number; due: number; reviewed: number; accuracy: number; mastery: number }; progress: UserProgress; weakWords: Vocabulary[]; setView: (v: ViewName) => void; openDeck: (id: string) => void; openAdd: () => void }) {
+function Dashboard({ name, words, decks, stats, progress, weakWords, setView, openDeck, openAdd, startLesson }: { startLesson: (deckId: string) => void; name: string; words: Vocabulary[]; decks: Deck[]; stats: { total: number; mastered: number; due: number; reviewed: number; accuracy: number; mastery: number }; progress: UserProgress; weakWords: Vocabulary[]; setView: (v: ViewName) => void; openDeck: (id: string) => void; openAdd: () => void }) {
   const recent = words.slice(0, 4);
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
   const streak = effectiveStreak(progress);
@@ -764,7 +787,10 @@ function Dashboard({ name, words, decks, stats, progress, weakWords, setView, op
           <div className="eyebrow"><Sparkles size={14} /> YOUR LEARNING PATH</div>
           <h1>{greeting}, {name} 👋</h1>
           <p>{stats.due ? `The soot crew found ${stats.due} words waiting for review.` : "Pick up where you left off and keep your streak going."}</p>
-          <button className="button primary large" onClick={() => setView("flashcards")}><Brain size={19} /> Start review <span>{stats.due}</span></button>
+          <div className="hero-actions">
+            <button className="button primary large" onClick={() => startLesson("all")}><Sparkles size={19} /> Học từ mới</button>
+            <button className="button secondary large" onClick={() => setView("flashcards")}><Brain size={19} /> Ôn tập <span>{stats.due}</span></button>
+          </div>
         </div>
         <div className="hero-crew">
           <SootCrew
@@ -777,7 +803,7 @@ function Dashboard({ name, words, decks, stats, progress, weakWords, setView, op
       </section>
 
       <div className="learn-layout">
-        <LearningPath decks={decks} words={words} openDeck={openDeck} onBrowse={() => setView("decks")} />
+        <LearningPath decks={decks} words={words} openDeck={startLesson} onBrowse={() => setView("decks")} />
         <aside className="learn-aside">
           <section className="lesson-goal-card">
             <div className="lesson-goal-head"><span className="lesson-goal-icon">🔥</span><span>DAILY GOAL</span><strong>{Math.min(effectiveDailyAnswers(progress), DAILY_GOAL)}/{DAILY_GOAL}</strong></div>
@@ -805,6 +831,57 @@ function Dashboard({ name, words, decks, stats, progress, weakWords, setView, op
       </section>
     </>
   );
+}
+
+// Pick a deck to learn new words from, plus the lesson keyboard shortcuts.
+function LearnHub({ words, decks, startLesson, reviewCount, startReview }: { words: Vocabulary[]; decks: Deck[]; startLesson: (deckId: string) => void; reviewCount: number; startReview: () => void }) {
+  const summary = (list: Vocabulary[]) => ({
+    total: list.length,
+    fresh: list.filter((w) => w.review_count === 0).length,
+    due: list.filter(isDue).length,
+    mastered: list.filter((w) => w.mastery_level >= 5).length,
+  });
+  const all = summary(words);
+  return <>
+    <PageHeader eyebrow="LEARN" title="Học từ mới" subtitle="Xem từ mới, nghe rồi viết lại. Mỗi bài 6 từ, từ viết sai sẽ quay lại cuối bài." action={<button className="button primary" disabled={!words.length} onClick={() => startLesson("all")}><Sparkles size={17} /> Học ngẫu nhiên tất cả bộ</button>} />
+    <div className="learn-hub">
+      <div className="learn-deck-grid">
+        {decks.map((deck) => {
+          const s = summary(words.filter((w) => w.deck_id === deck.id));
+          const pct = s.total ? Math.round(s.mastered / s.total * 100) : 0;
+          return <article key={deck.id} className="learn-deck" style={{ "--deck-color": deck.color } as React.CSSProperties}>
+            <div className="learn-deck-head"><span className="learn-deck-icon">{deck.icon}</span><div><h3>{deck.name}</h3><p>{s.total} từ · {pct}% thành thạo</p></div></div>
+            <div className="learn-deck-stats"><span><b>{s.fresh}</b> từ mới</span><span><b>{s.due}</b> đến hạn</span></div>
+            <div className="mini-progress"><span style={{ width: `${pct}%`, background: deck.color }} /></div>
+            <button className="button primary" disabled={!s.total} onClick={() => startLesson(deck.id)}>{s.total ? "Học ngay" : "Chưa có từ"}</button>
+          </article>;
+        })}
+      </div>
+      <aside className="learn-side">
+        <section className={`panel learn-review${reviewCount ? "" : " empty"}`}>
+          <SootBuddy size={58} look={{ bloom: "pink", holdR: "star-yellow" }} mood={reviewCount ? "curious" : "happy"} tool={reviewCount ? "binoculars" : undefined} />
+          <div>
+            <strong>Từ chưa thuộc</strong>
+            <span>{reviewCount ? `${reviewCount} từ trong sổ “Cần ôn”` : "Sổ “Cần ôn” đang trống"}</span>
+          </div>
+          <button className="button primary" disabled={!reviewCount} onClick={startReview}>Ôn bằng nghe – viết</button>
+        </section>
+        <section className="panel learn-overview">
+          <SootBuddy size={64} look={{ hat: true, holdR: "star-yellow" }} mood={all.fresh ? "curious" : "happy"} tool={all.fresh ? "magnifier" : undefined} />
+          <div><strong>{all.fresh}</strong><span>từ chưa học</span></div>
+          <div><strong>{all.due}</strong><span>từ đến hạn ôn</span></div>
+        </section>
+        <section className="panel learn-keys">
+          <h3>Phím tắt trong bài học</h3>
+          <div><kbd>Tab</kbd><span>Lật thẻ Anh ⇄ Việt · xem nghĩa khi viết</span></div>
+          <div><kbd>Enter</kbd><span>Qua từ mới · Kiểm tra · Tiếp tục</span></div>
+          <div><kbd>Space</kbd><span>Nghe lại (khi viết: lật nghĩa nếu ô trống)</span></div>
+          <div><kbd>Shift</kbd>+<kbd>Space</kbd><span>Nghe lại khi đang viết</span></div>
+          <div><kbd>Esc</kbd><span>Thoát bài học</span></div>
+        </section>
+      </aside>
+    </div>
+  </>;
 }
 
 function LearningPath({ decks, words, openDeck, onBrowse }: { decks: Deck[]; words: Vocabulary[]; openDeck: (id: string) => void; onBrowse: () => void }) {

@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import type { UserProgress, Vocabulary } from "@/lib/types";
 import { DAILY_GOAL, effectiveDailyAnswers, effectiveStreak, gameAccuracy, levelInfo } from "@/lib/gamification";
-import { speakEnglish } from "@/lib/speech";
+import { speakEnglish, speakEnglishAndWait } from "@/lib/speech";
 import { PeekCrew, SootBuddy, type CrewMember, type SignTone, type SootMood } from "./Soot";
 
 const GAME_CREW: CrewMember[] = [
@@ -279,12 +279,13 @@ function SpeedGame({ words, award }: { words: Vocabulary[]; award: AwardFn }) {
     return { target, options: shuffle([target, ...distractors]) };
   }, [words, seed]);
 
+  // The clock pauses while the picked word is being read aloud.
   useEffect(() => {
-    if (!running) return;
+    if (!running || picked) return;
     if (seconds <= 0) { setRunning(false); return; }
     const id = window.setTimeout(() => setSeconds((v) => v - 1), 1000);
     return () => window.clearTimeout(id);
-  }, [seconds, running]);
+  }, [seconds, running, picked]);
 
   if (!round) return <GameEmpty />;
   if (!running) return <div className="game-stage"><div className="speed-finish"><Timer size={42} /><span>Time!</span><h2>{score}</h2><p>correct answers in 30 seconds</p><button className="button primary" onClick={() => { setSeconds(30); setScore(0); setPicked(null); setSeed((v) => v + 1); setRunning(true); }}><RotateCcw size={16} /> Play again</button></div></div>;
@@ -296,10 +297,13 @@ function SpeedGame({ words, award }: { words: Vocabulary[]; award: AwardFn }) {
       const correct = option.id === round.target.id;
       return <button key={option.id} disabled={picked !== null} className={picked ? correct ? "correct" : picked === option.id ? "wrong" : "" : ""} onClick={() => {
         setPicked(option.id);
-        speakEnglish(round.target.word);
         void award(12, correct);
         if (correct) setScore((v) => v + 1);
-        window.setTimeout(() => { setPicked(null); setSeed((v) => v + 1); }, 320);
+        // Finish reading the word before moving on, but keep the answer visible at least briefly.
+        const started = Date.now();
+        void speakEnglishAndWait(round.target.word).then(() => {
+          window.setTimeout(() => { setPicked(null); setSeed((v) => v + 1); }, Math.max(150, 500 - (Date.now() - started)));
+        });
       }}>{option.meaning}</button>;
     })}</div>
   </div>;

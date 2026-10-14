@@ -51,4 +51,4 @@ export type UserProgress = {
   updated_at: string;
 };
 
-export type ViewName = "dashboard" | "words" | "flashcards" | "games" | "decks" | "stats" | "achievements";
+export type ViewName = "dashboard" | "learn" | "words" | "flashcards" | "games" | "decks" | "stats" | "achievements";
