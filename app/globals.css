@@ -76,6 +76,10 @@ kbd { border: 1px solid var(--line); background: var(--surface-2); padding: 3px 
 .button.primary { background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: white; box-shadow: 0 8px 20px rgba(102,87,238,.22); }
 .button.primary span { padding: 2px 6px; background: rgba(255,255,255,.18); border-radius: 999px; }
 .button.secondary { background: var(--surface); border: 1px solid var(--line); color: var(--text); box-shadow: none; }
+.ai-fill-row { display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:34px;margin-top:-5px }
+.ai-fill-message { display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px;line-height:1.45 }
+.ai-fill-message.success { color:var(--teal) }
+.ai-fill-button { min-height:34px;padding:0 11px;white-space:nowrap }
 .button.large { min-height: 46px; padding: 0 19px; }
 .button.compact { min-height: 34px; padding: 0 11px; }
 .button:disabled { opacity: .55; cursor: not-allowed; transform: none; }

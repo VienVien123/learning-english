@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Sparkles, X } from "lucide-react";
+import { Check, LoaderCircle, Sparkles, X } from "lucide-react";
 import type { Deck, Vocabulary } from "@/lib/types";
 
 type WordDraft = {
@@ -92,7 +92,10 @@ export default function WordModal({
   const [saving, setSaving] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [restored, setRestored] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [generationMessage, setGenerationMessage] = useState("");
   const currentDraftRef = useRef<WordDraft>(EMPTY);
+  const generationRequestRef = useRef(0);
 
   const title = useMemo(() => (initial ? "Edit vocabulary" : "Add a new word"), [initial]);
   const actualStorageKey = useMemo(() => {
@@ -151,6 +154,17 @@ export default function WordModal({
     }
   }, [draft, open, draftReady, actualStorageKey]);
 
+  useEffect(() => {
+    if (!open || initial || !draftReady || !draft.word.trim()) return;
+
+    const timer = window.setTimeout(() => {
+      void generateSuggestions(false);
+    }, 900);
+    return () => window.clearTimeout(timer);
+    // Only the word controls automatic generation. Other edits must not trigger another request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.word, open, initial, draftReady]);
+
   // Khi browser đưa tab xuống background/discard, ghi bản nháp lần cuối ngay lập tức.
   useEffect(() => {
     if (!open || !draftReady) return;
@@ -182,7 +196,64 @@ export default function WordModal({
   if (!open) return null;
 
   function update<K extends keyof WordDraft>(key: K, value: WordDraft[K]) {
+    if (key === "word") {
+      generationRequestRef.current += 1;
+      setGenerating(false);
+    }
     setDraft((prev) => ({ ...prev, [key]: value }));
+    if (key === "word") setGenerationMessage("");
+  }
+
+  async function generateSuggestions(overwrite: boolean) {
+    const word = currentDraftRef.current.word.trim();
+    if (!word || generating) return;
+
+    const requestId = ++generationRequestRef.current;
+    setGenerating(true);
+    setGenerationMessage("");
+
+    try {
+      const response = await fetch("/api/vocabulary/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ word }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể tạo gợi ý lúc này.");
+      if (requestId !== generationRequestRef.current) return;
+
+      const suggestion = result.suggestion as Partial<WordDraft> & {
+        tags?: string[];
+        synonyms?: string[];
+        antonyms?: string[];
+      };
+      const generated: Partial<WordDraft> = {
+        meaning: suggestion.meaning ?? "",
+        pronunciation: suggestion.pronunciation ?? "",
+        part_of_speech: suggestion.part_of_speech ?? "",
+        example: suggestion.example ?? "",
+        example_translation: suggestion.example_translation ?? "",
+        note: suggestion.note ?? "",
+        tags: Array.isArray(suggestion.tags) ? suggestion.tags.join(", ") : "",
+        synonyms: Array.isArray(suggestion.synonyms) ? suggestion.synonyms.join(", ") : "",
+        antonyms: Array.isArray(suggestion.antonyms) ? suggestion.antonyms.join(", ") : "",
+      };
+
+      setDraft((prev) => {
+        const next = { ...prev };
+        (Object.keys(generated) as Array<keyof WordDraft>).forEach((key) => {
+          if (overwrite || !prev[key].trim()) next[key] = generated[key] ?? "";
+        });
+        return next;
+      });
+      setGenerationMessage("Đã điền gợi ý. Bạn có thể chỉnh sửa các trường trước khi lưu.");
+    } catch (error) {
+      if (requestId === generationRequestRef.current) {
+        setGenerationMessage(error instanceof Error ? error.message : "Không thể tạo gợi ý lúc này.");
+      }
+    } finally {
+      if (requestId === generationRequestRef.current) setGenerating(false);
+    }
   }
 
   function clearSavedDraft() {
@@ -192,6 +263,8 @@ export default function WordModal({
   }
 
   function discardAndClose() {
+    generationRequestRef.current += 1;
+    setGenerating(false);
     clearSavedDraft();
     setRestored(false);
     onClose();
@@ -201,6 +274,8 @@ export default function WordModal({
     e.preventDefault();
     if (!draft.word.trim() || !draft.meaning.trim()) return;
 
+    generationRequestRef.current += 1;
+    setGenerating(false);
     setSaving(true);
     try {
       await onSave(draft);
@@ -246,6 +321,17 @@ export default function WordModal({
               <input value={draft.meaning} onChange={(e) => update("meaning", e.target.value)} placeholder="sự tình cờ may mắn" />
             </label>
           </div>
+
+          {!initial && (
+            <div className="ai-fill-row">
+              <div className={`ai-fill-message ${generationMessage.startsWith("Đã điền") ? "success" : ""}`} aria-live="polite">
+                {generating ? <><LoaderCircle size={15} className="spin" /> Gemini đang điền thông tin…</> : generationMessage}
+              </div>
+              <button type="button" className="button secondary ai-fill-button" onClick={() => void generateSuggestions(true)} disabled={generating || !draft.word.trim()}>
+                <Sparkles size={15} /> {generating ? "Đang tạo…" : "Tạo gợi ý"}
+              </button>
+            </div>
+          )}
 
           <div className="form-grid three">
             <label>

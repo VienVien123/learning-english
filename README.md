@@ -7,6 +7,7 @@ A beautiful realtime vocabulary learning app built with Next.js + Supabase.
 - Anonymous Supabase authentication (no signup required)
 - Realtime vocabulary and deck synchronization
 - Add / edit / delete vocabulary
+- Gemini suggestions for meaning, pronunciation, examples and related words
 - Deck organization
 - Search + filters
 - Pronunciation via browser Speech Synthesis
@@ -32,9 +33,11 @@ Create `.env.local`:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_KEY
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 ```
 
-A `.env.local` is already included in the delivered copy for the project credentials supplied in the chat. It is excluded by `.gitignore`.
+`GEMINI_API_KEY` is used only by the server route that generates vocabulary suggestions. Keep it out of `NEXT_PUBLIC_*` variables and do not commit `.env.local`.
+Copy the key into `GEMINI_API_KEY` in `.env.local`, then restart the dev server to enable automatic suggestions.
 
 ## 3. Run locally
 
@@ -53,6 +56,7 @@ Open http://localhost:3000
 4. Add environment variables:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+   - `GEMINI_API_KEY`
 5. Deploy.
 
 Because this app uses a Supabase publishable key in the browser, Row Level Security is essential. Never put a Supabase secret key or `service_role` key in a `NEXT_PUBLIC_*` variable.
