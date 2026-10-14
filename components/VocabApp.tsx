@@ -17,7 +17,7 @@ import DeckModal, { type DeckDraft } from "./DeckModal";
 import FlashcardStudy from "./FlashcardStudy";
 import AuthScreen from "./AuthScreen";
 import { LogoMark } from "./Logo";
-import { PeekCrew, SootBackdrop, SootBuddy, useSootEyes, type CrewMember } from "./Soot";
+import { SootBackdrop, SootBuddy, SootCrew, useSootEyes, type CrewMember } from "./Soot";
 import GamesView, { AchievementsView } from "./GamesView";
 import ImportWordsModal from "./ImportWordsModal";
 
@@ -65,11 +65,12 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(value));
 }
 
+// Sits inside the hero card on the right, peeking up from its bottom edge.
 const HERO_CREW: CrewMember[] = [
-  { x: 56, size: 70, look: { bloom: "green" } },
-  { x: 68, size: 88, look: { hat: true, holdR: "star-yellow" }, bubble: true },
-  { x: 81, size: 112, look: { bloom: "pink", holdL: "star-pink", holdR: "flower-yellow" } },
-  { x: 93, size: 70, look: { hat: true } },
+  { x: 12, size: 70, look: { bloom: "green" } },
+  { x: 35, size: 88, look: { hat: true, holdR: "star-yellow" }, bubble: true },
+  { x: 62, size: 108, look: { bloom: "pink", holdL: "star-pink", holdR: "flower-yellow" } },
+  { x: 88, size: 70, look: { hat: true } },
 ];
 
 function BootCrew() {
@@ -746,23 +747,22 @@ function Dashboard({ name, words, decks, stats, progress, weakWords, setView, op
   const streak = effectiveStreak(progress);
   return (
     <>
-      <PeekCrew
-        className="hero-peek"
-        members={HERO_CREW}
-        mood={stats.due ? "curious" : "idle"}
-        signs={[undefined, undefined, streak ? `🔥 ${streak}-day streak` : "Let's learn!"]}
-        signTone="good"
-        ledge={96}
-      >
-        <div className="hero-row learn-hero hero-card">
-          <div>
-            <div className="eyebrow"><Sparkles size={14} /> YOUR LEARNING PATH</div>
-            <h1>{greeting}, {name} 👋</h1>
-            <p>{stats.due ? `The soot crew found ${stats.due} words waiting for review.` : "Pick up where you left off and keep your streak going."}</p>
-          </div>
+      <section className="learn-hero hero-card">
+        <div className="hero-copy">
+          <div className="eyebrow"><Sparkles size={14} /> YOUR LEARNING PATH</div>
+          <h1>{greeting}, {name} 👋</h1>
+          <p>{stats.due ? `The soot crew found ${stats.due} words waiting for review.` : "Pick up where you left off and keep your streak going."}</p>
           <button className="button primary large" onClick={() => setView("flashcards")}><Brain size={19} /> Start review <span>{stats.due}</span></button>
         </div>
-      </PeekCrew>
+        <div className="hero-crew">
+          <SootCrew
+            members={HERO_CREW}
+            mood={stats.due ? "curious" : "idle"}
+            signs={[undefined, undefined, streak ? `🔥 ${streak}-day streak` : "Let's learn!"]}
+            signTone="good"
+          />
+        </div>
+      </section>
 
       <div className="learn-layout">
         <LearningPath decks={decks} words={words} openDeck={openDeck} onBrowse={() => setView("decks")} />

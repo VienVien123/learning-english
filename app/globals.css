@@ -378,6 +378,8 @@ body { line-height: 1.5; }
 .topbar { padding-inline: clamp(20px, 3vw, 42px); }
 .global-search { border-radius: 14px; box-shadow: 0 2px 8px rgba(35, 38, 75, 0.025); }
 .content { max-width: 1480px; padding-top: 42px; }
+/* Line the topbar up with the centered content column on wide screens. */
+.topbar { padding-inline: max(clamp(20px, 3vw, 42px), calc((100% - 1480px) / 2 + 40px)); }
 .hero-row h1, .page-header h1 { letter-spacing: -1.65px; }
 .hero-row p, .page-header p { font-size: 14px; }
 .stat-grid { gap: 14px; }
@@ -1215,9 +1217,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .boot-crew { display: flex; align-items: flex-end; gap: 10px; }
 
 /* Dashboard hero card */
-.hero-peek { margin-top: 34px; margin-bottom: 22px; }
-.hero-card { padding: 26px 30px; border: 1px solid var(--line); border-radius: 26px; background: linear-gradient(120deg, color-mix(in srgb, var(--surface) 88%, var(--primary-soft)), var(--surface) 60%, color-mix(in srgb, var(--surface) 90%, #fff3dc)); box-shadow: 0 18px 44px rgba(52, 82, 130, .08); }
-.hero-card.hero-row { margin-bottom: 0; }
+.hero-card { position: relative; overflow: hidden; margin-bottom: 22px; padding: 26px 30px; border: 1px solid var(--line); border-radius: 26px; background: linear-gradient(120deg, color-mix(in srgb, var(--surface) 88%, var(--primary-soft)), var(--surface) 60%, color-mix(in srgb, var(--surface) 90%, #fff3dc)); box-shadow: 0 18px 44px rgba(52, 82, 130, .08); }
+.hero-copy { position: relative; z-index: 1; max-width: 56%; }
+.hero-copy h1 { margin: 10px 0 8px; font-size: clamp(28px, 3vw, 40px); line-height: 1.1; letter-spacing: -1.2px; }
+.hero-copy p { margin: 0 0 18px; }
+/* The crew stands on the card's bottom edge; overflow: hidden on the card hides their lower half. */
+.hero-crew { --k: 1; position: absolute; right: 24px; bottom: 0; width: min(420px, 42%); height: 100%; pointer-events: none; }
+.hero-crew .soot-crew { position: absolute; inset: 0; }
+.hero-crew .soot { pointer-events: auto; }
 
 /* Empty states with a buddy */
 .empty-inline .soot-buddy, .empty-table .soot-buddy, .path-empty .soot-buddy, .game-empty .soot-buddy { margin-bottom: 4px; }
@@ -1233,7 +1240,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 @media (max-width: 560px) {
   .peek-host { --k: .72; }
-  .hero-card { padding: 20px; border-radius: 22px; }
+  .hero-card { padding: 20px 20px 104px; border-radius: 22px; }
+  .hero-copy { max-width: none; }
+  .hero-copy .button { width: 100%; }
+  .hero-crew { --k: .72; left: 12px; right: 12px; width: auto; height: 130px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .soot-buddy .soot-bob { animation: none !important; }

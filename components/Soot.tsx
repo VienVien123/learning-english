@@ -303,7 +303,10 @@ type CrewProps = {
 };
 
 // A row of sprites hiding behind the top edge of whatever card is passed as children.
-export function PeekCrew({ members, mood = "idle", signs, signTone = "bad", bubble = "?", cheer = 0, ledge = 92, className = "", children }: CrewProps) {
+type SootCrewProps = Omit<CrewProps, "ledge" | "className" | "children"> & { className?: string };
+
+// The sprites themselves, anchored to the bottom of whatever box contains them.
+export function SootCrew({ members, mood = "idle", signs, signTone = "bad", bubble = "?", cheer = 0, className = "" }: SootCrewProps) {
   const bobs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
@@ -313,8 +316,7 @@ export function PeekCrew({ members, mood = "idle", signs, signTone = "bad", bubb
   }, [cheer]);
 
   return (
-    <div className={`peek-host ${className}`} style={{ "--ledge": `${ledge}px` } as CSSProperties}>
-      <div className={`soot-crew is-${mood}`} aria-hidden="true">
+      <div className={`soot-crew is-${mood} ${className}`} aria-hidden="true">
         {members.map((m, i) => (
           <div key={i} className="soot soot-track" style={{ "--x": m.x, "--s": m.size, "--d": `${-(i * 0.7) % 3}s`, "--i": i } as CSSProperties}>
             {m.bubble && <span className="soot-bubble">{bubble}</span>}
@@ -326,6 +328,13 @@ export function PeekCrew({ members, mood = "idle", signs, signTone = "bad", bubb
           </div>
         ))}
       </div>
+  );
+}
+
+export function PeekCrew({ ledge = 92, className = "", children, ...crew }: CrewProps) {
+  return (
+    <div className={`peek-host ${className}`} style={{ "--ledge": `${ledge}px` } as CSSProperties}>
+      <SootCrew {...crew} />
       {children}
     </div>
   );
