@@ -99,6 +99,10 @@ export default function WordModal({
   // Values Gemini last wrote into each field, so a new suggestion can replace them
   // (e.g. after the word changes) without touching anything the user typed.
   const aiFilledRef = useRef<Partial<WordDraft>>({});
+  // Gemini thinks the word is misspelled: offer the fix and hold its content until the learner decides.
+  const [spellFix, setSpellFix] = useState<{ typed: string; corrected: string; generated: Partial<WordDraft> } | null>(null);
+  // Skip the automatic lookup for a word whose content we already have (after accepting a fix).
+  const skipAutoForRef = useRef("");
 
   const title = useMemo(() => (initial ? "Edit vocabulary" : "Add a new word"), [initial]);
   const actualStorageKey = useMemo(() => {
@@ -160,6 +164,7 @@ export default function WordModal({
 
   useEffect(() => {
     if (!open || initial || !draftReady || !draft.word.trim()) return;
+    if (draft.word.trim() === skipAutoForRef.current) return;
 
     const timer = window.setTimeout(() => {
       void generateSuggestions(false);
@@ -203,6 +208,7 @@ export default function WordModal({
     if (key === "word") {
       generationRequestRef.current += 1;
       setGenerating(false);
+      setSpellFix(null);
     }
     setDraft((prev) => ({ ...prev, [key]: value }));
     if (key === "word") setGenerationMessage("");
@@ -230,6 +236,8 @@ export default function WordModal({
         tags?: string[];
         synonyms?: string[];
         antonyms?: string[];
+        spelling_ok?: boolean;
+        corrected_word?: string;
       };
       const generated: Partial<WordDraft> = {
         meaning: suggestion.meaning ?? "",
@@ -243,8 +251,27 @@ export default function WordModal({
         antonyms: Array.isArray(suggestion.antonyms) ? suggestion.antonyms.join(", ") : "",
       };
 
-      // Fill a field if asked to overwrite, if it is empty, or if it still holds
-      // an earlier AI value the user hasn't edited.
+      const corrected = suggestion.corrected_word?.trim() ?? "";
+      if (suggestion.spelling_ok === false && corrected && corrected.toLowerCase() !== word.toLowerCase()) {
+        setSpellFix({ typed: word, corrected, generated });
+        setGenerationMessage("");
+        return;
+      }
+      applyGenerated(generated, overwrite);
+      setGenerationMessage("Đã điền gợi ý. Bạn có thể chỉnh sửa các trường trước khi lưu.");
+    } catch (error) {
+      if (requestId === generationRequestRef.current) {
+        setGenerationMessage(error instanceof Error ? error.message : "Không thể tạo gợi ý lúc này.");
+      }
+    } finally {
+      if (requestId === generationRequestRef.current) setGenerating(false);
+    }
+  }
+
+  // Fill a field if asked to overwrite, if it is empty, or if it still holds
+  // an earlier AI value the user hasn't edited.
+  function applyGenerated(generated: Partial<WordDraft>, overwrite: boolean) {
+    {
       const current = currentDraftRef.current;
       const filled = aiFilledRef.current;
       const updates: Partial<WordDraft> = {};
@@ -254,14 +281,35 @@ export default function WordModal({
       });
       aiFilledRef.current = { ...filled, ...updates };
       setDraft((prev) => ({ ...prev, ...updates }));
-      setGenerationMessage("Đã điền gợi ý. Bạn có thể chỉnh sửa các trường trước khi lưu.");
-    } catch (error) {
-      if (requestId === generationRequestRef.current) {
-        setGenerationMessage(error instanceof Error ? error.message : "Không thể tạo gợi ý lúc này.");
-      }
-    } finally {
-      if (requestId === generationRequestRef.current) setGenerating(false);
+      currentDraftRef.current = { ...current, ...updates };
     }
+  }
+
+  function acceptSpellFix() {
+    if (!spellFix) return;
+    skipAutoForRef.current = spellFix.corrected;
+    currentDraftRef.current = { ...currentDraftRef.current, word: spellFix.corrected };
+    setDraft((prev) => ({ ...prev, word: spellFix.corrected }));
+    applyGenerated(spellFix.generated, false);
+    setSpellFix(null);
+    setGenerationMessage(`Đã sửa thành “${spellFix.corrected}” và điền gợi ý.`);
+  }
+
+  function rejectSpellFix() {
+    if (!spellFix) return;
+    setSpellFix(null);
+    setGenerationMessage(`Đã giữ nguyên “${spellFix.typed}”. Bạn có thể tự điền nghĩa.`);
+  }
+
+  // Ask before throwing away what the learner typed.
+  function hasContent() {
+    const d = currentDraftRef.current;
+    return Object.entries(d).some(([key, value]) => key !== "deck_id" && String(value).trim());
+  }
+
+  function requestClose() {
+    if (!initial && hasContent() && !window.confirm("Bỏ từ đang nhập? Nội dung chưa lưu sẽ bị xoá.")) return;
+    discardAndClose();
   }
 
   function clearSavedDraft() {
@@ -297,7 +345,7 @@ export default function WordModal({
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={discardAndClose}>
+    <div className="modal-backdrop">
       <div className="modal-card" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
@@ -309,7 +357,7 @@ export default function WordModal({
                 : "Nội dung đang nhập được tự động lưu, nên bạn có thể chuyển tab mà không sợ mất."}
             </p>
           </div>
-          <button className="icon-btn" onClick={discardAndClose} aria-label="Close"><X size={20} /></button>
+          <button className="icon-btn" onClick={requestClose} aria-label="Close"><X size={20} /></button>
         </div>
 
         {restored && (
@@ -329,6 +377,19 @@ export default function WordModal({
               <input value={draft.meaning} onChange={(e) => update("meaning", e.target.value)} placeholder="sự tình cờ may mắn" />
             </label>
           </div>
+
+          {spellFix && (
+            <div className="spell-fix" role="alert">
+              <div>
+                <strong>Có phải bạn muốn viết “{spellFix.corrected}”?</strong>
+                <span>Gemini nghĩ “{spellFix.typed}” bị sai chính tả.</span>
+              </div>
+              <div className="spell-fix-actions">
+                <button type="button" className="button primary compact" onClick={acceptSpellFix}><Check size={15} /> Đúng, sửa lại</button>
+                <button type="button" className="button secondary compact" onClick={rejectSpellFix}>Không, giữ nguyên</button>
+              </div>
+            </div>
+          )}
 
           {!initial && (
             <div className="ai-fill-row">
@@ -394,7 +455,7 @@ export default function WordModal({
           </label>
 
           <div className="modal-actions">
-            <button type="button" className="button secondary" onClick={discardAndClose}>Cancel</button>
+            <button type="button" className="button secondary" onClick={requestClose}>Cancel</button>
             <button type="submit" className="button primary" disabled={saving || !draft.word.trim() || !draft.meaning.trim()}>
               {saving ? "Saving..." : initial ? "Save changes" : "Add vocabulary"}
             </button>

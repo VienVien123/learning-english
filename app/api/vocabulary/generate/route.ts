@@ -9,6 +9,8 @@ const requestsByIp = new Map<string, { count: number; resetAt: number }>();
 const vocabularySchema = {
   type: "OBJECT",
   properties: {
+    spelling_ok: { type: "BOOLEAN" },
+    corrected_word: { type: "STRING" },
     meaning: { type: "STRING" },
     pronunciation: { type: "STRING" },
     part_of_speech: { type: "STRING" },
@@ -20,6 +22,8 @@ const vocabularySchema = {
     antonyms: { type: "ARRAY", items: { type: "STRING" } },
   },
   required: [
+    "spelling_ok",
+    "corrected_word",
     "meaning",
     "pronunciation",
     "part_of_speech",
@@ -105,6 +109,10 @@ export async function POST(request: Request) {
   }
 
   const prompt = `Create a vocabulary entry for the English word or phrase: "${word.trim()}".
+First check the spelling:
+- spelling_ok: true if it is a correctly spelled English word or phrase (including proper capitalisation-insensitive variants and valid British/American spellings), otherwise false.
+- corrected_word: when spelling_ok is false, the single most likely intended English word or phrase (keep the learner's casing style, lowercase if unsure); when spelling_ok is true, repeat the input unchanged.
+Then write every other field for corrected_word (the intended word), not for the misspelling.
 Return accurate, concise learning content for a Vietnamese-speaking English learner.
 - meaning: Vietnamese meaning; include the main sense, not a long explanation.
 - pronunciation: IPA pronunciation in a standard British or American form.

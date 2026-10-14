@@ -1806,3 +1806,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 /* Sideways swipes on cards must not trigger the browser's back/forward gesture. */
 html, body { overscroll-behavior-x: none; }
 .fc-card { touch-action: pan-y pinch-zoom; }
+
+/* Gemini spelling suggestion in the word form */
+.spell-fix { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; margin: 4px 0 12px; padding: 12px 14px; border: 1.5px solid #f3c46b; border-radius: 14px; background: #fff8e8; animation: fc-enter .25s ease both; }
+.spell-fix strong { display: block; color: #8a5a10; font-size: 15px; }
+.spell-fix span { color: #a07a3a; font-size: 13px; }
+.spell-fix-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+:root[data-theme="dark"] .spell-fix { background: #3a2f17; border-color: #6b5320; }
+:root[data-theme="dark"] .spell-fix strong { color: #f3c46b; }
+:root[data-theme="dark"] .spell-fix span { color: #d6b26a; }
