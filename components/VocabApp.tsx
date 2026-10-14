@@ -20,6 +20,8 @@ import { useSoundOn } from "@/lib/sound";
 import { GOAL_OPTIONS, useDailyGoal } from "@/lib/dailyGoal";
 import ActivityHeatmap from "./ActivityHeatmap";
 import { clearOfflineData, useInstallPrompt } from "@/lib/pwa";
+import { profileName } from "@/lib/profile";
+import UserAvatar from "./UserAvatar";
 import { LogoMark } from "./Logo";
 import { SootBackdrop, SootBuddy, SootCrew, useSootEyes, type CrewMember } from "./Soot";
 
@@ -30,6 +32,7 @@ const loadLesson = () => import("./LessonPlayer");
 const loadGames = () => import("./GamesView");
 const loadWordModal = () => import("./WordModal");
 const loadImport = () => import("./ImportWordsModal");
+const loadProfile = () => import("./ProfileView");
 const AuthScreen = dynamic(loadAuth, { loading: () => <BootScreen text="Loading…" /> });
 const FlashcardStudy = dynamic(loadFlashcards);
 const LessonPlayer = dynamic(loadLesson);
@@ -37,6 +40,7 @@ const GamesView = dynamic(loadGames);
 const AchievementsView = dynamic(() => loadGames().then((m) => m.AchievementsView));
 const WordModal = dynamic(loadWordModal);
 const ImportWordsModal = dynamic(loadImport);
+const ProfileView = dynamic(loadProfile);
 
 const navItems: { id: ViewName; label: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -64,6 +68,7 @@ const mobileNavLabels: Record<ViewName, string> = {
   decks: "Decks",
   stats: "Stats",
   achievements: "Awards",
+  profile: "Profile",
 };
 
 function speak(text: string) {
@@ -760,7 +765,13 @@ export default function VocabApp() {
         <div className="sidebar-bottom">
           {canInstall && <button className="nav-item compact-row install-app" onClick={() => void install()}><Download size={18} /><span>Cài ứng dụng TV-English</span></button>}
           <button className="nav-item compact-row" onClick={toggleTheme}>{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}<span>{theme === "light" ? "Dark mode" : "Light mode"}</span></button>
-          <div className="profile-chip"><span className="avatar">{(user.user_metadata?.display_name || user.email || "U").slice(0, 1).toUpperCase()}</span><div><strong>{user.user_metadata?.display_name || user.email?.split("@")[0] || "Learner"}</strong><small>{user.email || (online ? "Synced with Supabase" : "Offline")}</small></div><button className="profile-signout" onClick={handleSignOut} title="Sign out"><LogOut size={15} /></button></div>
+          <div className={`profile-chip${view === "profile" ? " active" : ""}`}>
+            <button className="profile-open" onClick={() => { setView("profile"); if (!sidebarPinned) setSidebarOpen(false); }} title="Trang cá nhân">
+              <UserAvatar user={user} size={36} />
+              <div><strong>{profileName(user)}</strong><small>{user.email || (online ? "Synced with Supabase" : "Offline")}</small></div>
+            </button>
+            <button className="profile-signout" onClick={handleSignOut} title="Sign out"><LogOut size={15} /></button>
+          </div>
         </div>
       </aside>
 
@@ -777,12 +788,14 @@ export default function VocabApp() {
             {canInstall && <button className="icon-btn install-app" onClick={() => void install()} aria-label="Cài ứng dụng" title="Cài ứng dụng TV-English"><Download size={18} /></button>}
             <button className="icon-btn theme-mobile" onClick={toggleTheme}>{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button>
             <button className="icon-btn account-logout" onClick={handleSignOut} title={`Sign out ${user.email ?? ""}`}><LogOut size={17} /></button>
+            <button className="topbar-avatar" onClick={() => setView("profile")} aria-label="Trang cá nhân" title="Trang cá nhân"><UserAvatar user={user} size={36} /></button>
             <button className="button primary" onClick={() => { setEditingWord(null); setWordModalOpen(true); }}><Plus size={17} /> Add word</button>
           </div>
         </header>
 
         <section className="content">
-          {view === "dashboard" && <Dashboard name={user.user_metadata?.display_name || user.email?.split("@")[0] || "Learner"} words={words} decks={decks} stats={stats} progress={progress} weakWords={weakWords} setView={setView} openDeck={(id) => { setDeckFilter(id); setView("words"); }} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} startLesson={startLesson} userId={user.id} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />}
+          {view === "dashboard" && <Dashboard name={profileName(user)} words={words} decks={decks} stats={stats} progress={progress} weakWords={weakWords} setView={setView} openDeck={(id) => { setDeckFilter(id); setView("words"); }} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} startLesson={startLesson} userId={user.id} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />}
+          {view === "profile" && <ProfileView user={user} progress={progress} wordCount={stats.total} masteredCount={stats.mastered} onUserUpdated={setUser} onSignOut={handleSignOut} />}
           {view === "learn" && <LearnHub words={words} decks={decks} startLesson={startLesson} reviewCount={words.filter((w) => reviewIds.includes(w.id)).length} startReview={() => startReviewLesson(reviewIds)} />}
           {view === "words" && <VocabularyView words={filteredWords} decks={decks} query={query} setQuery={setQuery} deckFilter={deckFilter} setDeckFilter={setDeckFilter} levelFilter={levelFilter} setLevelFilter={setLevelFilter} onEdit={(w) => { setEditingWord(w); setWordModalOpen(true); }} onDelete={deleteWord} onFavorite={toggleFavorite} onImport={() => setImportModalOpen(true)} onAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
           {view === "flashcards" && (
