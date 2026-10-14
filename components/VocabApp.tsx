@@ -106,6 +106,24 @@ function BootCrew() {
   );
 }
 
+const STARTER_DECK = { name: "My Vocabulary", description: "Your first vocabulary collection", icon: "🌱", color: "#6d5dfc" };
+const isStarterDeck = (d: Deck) => d.name === STARTER_DECK.name && d.description === STARTER_DECK.description;
+
+// One starter-deck creation per user at a time, however many loads ask for it.
+const starterRequests = new Map<string, Promise<Deck[]>>();
+
+function ensureDefaultDeck(uid: string): Promise<Deck[]> {
+  const pending = starterRequests.get(uid);
+  if (pending) return pending;
+  const request = (async () => {
+    await supabase.from("decks").insert({ user_id: uid, ...STARTER_DECK });
+    const { data } = await supabase.from("decks").select("*").eq("user_id", uid).order("created_at", { ascending: true });
+    return (data ?? []) as Deck[];
+  })().finally(() => starterRequests.delete(uid));
+  starterRequests.set(uid, request);
+  return request;
+}
+
 export default function VocabApp() {
   useSootEyes();
 
@@ -210,14 +228,19 @@ export default function VocabApp() {
 
     let nextDecks = (decksRes.data ?? []) as Deck[];
     if (!decksRes.error && nextDecks.length === 0) {
-      const { data } = await supabase.from("decks").insert({
-        user_id: uid,
-        name: "My Vocabulary",
-        description: "Your first vocabulary collection",
-        icon: "🌱",
-        color: "#6d5dfc",
-      }).select("*").single();
-      if (data) nextDecks = [data as Deck];
+      nextDecks = await ensureDefaultDeck(uid);
+    }
+
+    // Several loads racing on a brand-new account used to create duplicate starter decks.
+    // Keep the first one and remove any extra empty copies.
+    const starters = nextDecks.filter(isStarterDeck);
+    if (!wordsRes.error && starters.length > 1) {
+      const used = new Set(((wordsRes.data ?? []) as Vocabulary[]).map((w) => w.deck_id));
+      const extras = starters.slice(1).filter((d) => !used.has(d.id));
+      if (extras.length) {
+        const { error } = await supabase.from("decks").delete().in("id", extras.map((d) => d.id)).eq("user_id", uid);
+        if (!error) nextDecks = nextDecks.filter((d) => !extras.includes(d));
+      }
     }
 
     setDecks(nextDecks);
