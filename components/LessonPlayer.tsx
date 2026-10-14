@@ -137,6 +137,7 @@ export default function LessonPlayer({
   const [tally, setTally] = useState({ correct: 0, wrong: 0 });
   const retries = useRef<Record<string, number>>({});
   const inputRef = useRef<HTMLInputElement>(null);
+  const swipe = useRef<{ x: number; y: number; lastX: number; lastY: number } | null>(null);
   const usedIds = useRef<Set<string>>(new Set());
   const [reviewIds] = useReviewIds(reviewKey);
   const [soundOn, toggleSound] = useSoundOn();
@@ -225,6 +226,19 @@ export default function LessonPlayer({
     setResult(null);
     setIndex((i) => i + 1);
   }, [index, onReview, reviewKey, word]);
+
+  // Swipe up = next word (once the meaning has been seen); a sideways swipe or a tap flips the card.
+  const endSwipe = (x: number, y: number) => {
+    const start = swipe.current;
+    swipe.current = null;
+    if (!start) return;
+    const dx = x - start.x;
+    const dy = y - start.y;
+    if (dy < -70 && Math.abs(dy) > Math.abs(dx)) {
+      if (seenBack) next();
+      else flipIntro();
+    } else if (Math.abs(dy) < 70 || Math.abs(dx) > Math.abs(dy)) flipIntro();
+  };
 
   const next = useCallback(() => {
     // Stop anything still being read so it doesn't overlap the next word.
@@ -417,7 +431,21 @@ export default function LessonPlayer({
               <p className="lesson-prompt">{review ? "Ôn lại từ chưa thuộc" : PROMPTS.intro}</p>
               <div className={`lesson-flip${flipped ? " is-flipped" : ""}`}>
                 <SpeakButtons text={word.word} />
-                <div className="lesson-flip-inner" onClick={flipIntro} role="button" tabIndex={-1} aria-label="Lật thẻ">
+                <div
+                  className="lesson-flip-inner"
+                  role="button"
+                  tabIndex={-1}
+                  aria-label="Lật thẻ"
+                  onPointerDown={(e) => { if (e.pointerType !== "touch") swipe.current = { x: e.clientX, y: e.clientY, lastX: e.clientX, lastY: e.clientY }; }}
+                  onPointerUp={(e) => { if (e.pointerType !== "touch") endSwipe(e.clientX, e.clientY); }}
+                  onTouchStart={(e) => { const t = e.touches[0]; swipe.current = { x: t.clientX, y: t.clientY, lastX: t.clientX, lastY: t.clientY }; }}
+                  onTouchMove={(e) => { const t = e.touches[0]; if (swipe.current && t) { swipe.current.lastX = t.clientX; swipe.current.lastY = t.clientY; } }}
+                  onTouchEnd={(e) => {
+                    // The browser also fires a click after a tap; handled here instead.
+                    e.preventDefault();
+                    if (swipe.current) endSwipe(swipe.current.lastX, swipe.current.lastY);
+                  }}
+                >
                   <div className="lesson-face front">
                     {word.image_url && <img src={word.image_url} alt="" />}
                     {word.example ? (
@@ -443,6 +471,7 @@ export default function LessonPlayer({
               <button className="lesson-btn" disabled={!seenBack} onClick={next}>Tiếp tục <ArrowRight size={18} /><kbd>Enter ↵</kbd></button>
               <button className="lesson-known" onClick={markKnown}>Mình đã thuộc từ này</button>
               <KeyLegend items={[["Tab", "lật thẻ"], ["Enter", seenBack ? "từ tiếp theo" : "lật thẻ"], ["Space", "nghe lại"], ["Esc", "thoát"]]} />
+              <p className="touch-hint">Chạm hoặc quẹt ngang để lật thẻ{seenBack ? " · quẹt lên để sang từ tiếp" : ""}</p>
             </footer>
           </>
         )}

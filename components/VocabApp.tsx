@@ -59,6 +59,9 @@ const navGroups: { label: string; items: typeof navItems }[] = [
   { label: "PROGRESS", items: navItems.filter(({ id }) => ["stats", "achievements"].includes(id)) },
 ];
 
+// The phone bottom bar keeps the five daily screens; the rest live behind "Thêm" (the side menu).
+const MOBILE_TABS: ViewName[] = ["dashboard", "learn", "flashcards", "games", "words"];
+
 const mobileNavLabels: Record<ViewName, string> = {
   dashboard: "Home",
   learn: "Learn",
@@ -784,10 +787,10 @@ export default function VocabApp() {
           <div className="global-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search your vocabulary..." onFocus={() => setView("words")} /><kbd>⌘ K</kbd></div>
           <div className="topbar-actions">
             <span className={`sync-status ${online ? "online" : ""}`}>{syncing ? <Loader2 className="spin" size={14} /> : online ? <Check size={14} /> : <WifiOff size={14} />}{syncing ? "Syncing" : online ? "Live sync" : "Offline"}</span>
-            <button className="icon-btn" onClick={toggleSound} aria-label={soundOn ? "Tắt hiệu ứng âm thanh" : "Bật hiệu ứng âm thanh"} title={soundOn ? "Tắt hiệu ứng âm thanh" : "Bật hiệu ứng âm thanh"}>{soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
+            <button className="icon-btn desktop-only" onClick={toggleSound} aria-label={soundOn ? "Tắt hiệu ứng âm thanh" : "Bật hiệu ứng âm thanh"} title={soundOn ? "Tắt hiệu ứng âm thanh" : "Bật hiệu ứng âm thanh"}>{soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
             {canInstall && <button className="icon-btn install-app" onClick={() => void install()} aria-label="Cài ứng dụng" title="Cài ứng dụng TV-English"><Download size={18} /></button>}
-            <button className="icon-btn theme-mobile" onClick={toggleTheme}>{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button>
-            <button className="icon-btn account-logout" onClick={handleSignOut} title={`Sign out ${user.email ?? ""}`}><LogOut size={17} /></button>
+            <button className="icon-btn theme-mobile desktop-only" onClick={toggleTheme}>{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button>
+            <button className="icon-btn account-logout desktop-only" onClick={handleSignOut} title={`Sign out ${user.email ?? ""}`}><LogOut size={17} /></button>
             <button className="topbar-avatar" onClick={() => setView("profile")} aria-label="Trang cá nhân" title="Trang cá nhân"><UserAvatar user={user} size={36} /></button>
             <button className="button primary" onClick={() => { setEditingWord(null); setWordModalOpen(true); }}><Plus size={17} /> Add word</button>
           </div>
@@ -795,7 +798,7 @@ export default function VocabApp() {
 
         <section className="content">
           {view === "dashboard" && <Dashboard name={profileName(user)} words={words} decks={decks} stats={stats} progress={progress} weakWords={weakWords} setView={setView} openDeck={(id) => { setDeckFilter(id); setView("words"); }} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} startLesson={startLesson} userId={user.id} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />}
-          {view === "profile" && <ProfileView user={user} progress={progress} wordCount={stats.total} masteredCount={stats.mastered} onUserUpdated={setUser} onSignOut={handleSignOut} />}
+          {view === "profile" && <ProfileView user={user} progress={progress} wordCount={stats.total} masteredCount={stats.mastered} onUserUpdated={setUser} onSignOut={handleSignOut} theme={theme} onToggleTheme={toggleTheme} soundOn={soundOn} onToggleSound={toggleSound} />}
           {view === "learn" && <LearnHub words={words} decks={decks} startLesson={startLesson} reviewCount={words.filter((w) => reviewIds.includes(w.id)).length} startReview={() => startReviewLesson(reviewIds)} />}
           {view === "words" && <VocabularyView words={filteredWords} decks={decks} query={query} setQuery={setQuery} deckFilter={deckFilter} setDeckFilter={setDeckFilter} levelFilter={levelFilter} setLevelFilter={setLevelFilter} onEdit={(w) => { setEditingWord(w); setWordModalOpen(true); }} onDelete={deleteWord} onFavorite={toggleFavorite} onImport={() => setImportModalOpen(true)} onAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
           {view === "flashcards" && (
@@ -812,7 +815,8 @@ export default function VocabApp() {
       </main>
 
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        {navItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} aria-current={view === item.id ? "page" : undefined} onClick={() => setView(item.id)}><Icon size={20} /><span>{mobileNavLabels[item.id]}</span></button>; })}
+        {navItems.filter((item) => MOBILE_TABS.includes(item.id)).map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} aria-current={view === item.id ? "page" : undefined} onClick={() => setView(item.id)}><Icon size={22} /><span>{mobileNavLabels[item.id]}</span></button>; })}
+        <button className={["decks", "stats", "achievements"].includes(view) || sidebarOpen ? "active" : ""} onClick={toggleSidebar} aria-label="Thêm mục"><Menu size={22} /><span>Thêm</span></button>
       </nav>
 
       {lessonDeck && (

@@ -90,7 +90,7 @@ export default function FlashcardStudy({
   const [restart, setRestart] = useState(0);
   const [customIds, setCustomIds] = useState<string[] | null>(null);
 
-  const drag = useRef<{ x: number; moved: boolean } | null>(null);
+  const drag = useRef<{ x: number; last: number; moved: boolean } | null>(null);
   const reactionTimer = useRef(0);
   const reviewIdsRef = useRef<string[]>([]);
   reviewIdsRef.current = reviewIds;
@@ -195,26 +195,48 @@ export default function FlashcardStudy({
   }, [current, flip, grade, prefs.reverse]);
 
   // Swipe the card: right = learned, left = not yet. A tap without movement flips it.
-  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest("button, textarea, input, a") || exit) return;
-    drag.current = { x: e.clientX, moved: false };
-    e.currentTarget.setPointerCapture(e.pointerId);
+  // Drag/swipe the card. Mouse and pen use pointer events; fingers use touch events,
+  // because mobile browsers cancel pointer events once they think a gesture is a scroll.
+  const dragStart = (x: number, target: EventTarget) => {
+    if ((target as HTMLElement).closest("button, textarea, input, a") || exit) return false;
+    drag.current = { x, last: x, moved: false };
+    return true;
   };
-  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const dragMove = (x: number) => {
     if (!drag.current) return;
-    const dx = e.clientX - drag.current.x;
+    const dx = x - drag.current.x;
+    drag.current.last = x;
     if (Math.abs(dx) > 6) drag.current.moved = true;
     setDragX(dx);
   };
-  const onPointerUp = () => {
+  const dragEnd = (x: number | null) => {
     const state = drag.current;
     drag.current = null;
     if (!state) return;
-    if (Math.abs(dragX) > SWIPE_DISTANCE) grade(dragX > 0 ? "known" : "unknown");
+    const dx = (x ?? state.last) - state.x;
+    if (Math.abs(dx) > SWIPE_DISTANCE) grade(dx > 0 ? "known" : "unknown");
     else {
       setDragX(0);
       if (!state.moved) flip();
     }
+  };
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch") return;
+    if (dragStart(e.clientX, e.target)) e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "touch") dragMove(e.clientX);
+  };
+  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== "touch") dragEnd(e.clientX);
+  };
+  const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => { dragStart(e.touches[0].clientX, e.target); };
+  const onTouchMove = (e: React.TouchEvent<HTMLDivElement>) => dragMove(e.touches[0].clientX);
+  const onTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    // A tap is turned into a click by the browser too; ignore that one so the card doesn't flip twice.
+    if (drag.current && !drag.current.moved) e.preventDefault();
+    // Use the last position seen while moving; touchend coordinates aren't reliable everywhere.
+    dragEnd(null);
   };
 
   async function saveNote() {
@@ -301,7 +323,10 @@ export default function FlashcardStudy({
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
-                onPointerCancel={onPointerUp}
+                onPointerCancel={(e) => { if (e.pointerType !== "touch" && drag.current) dragEnd(null); }}
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
               >
                 <span className="fc-stamp known" style={{ opacity: dragX > 0 ? stamp : 0 }}>Đã thuộc</span>
                 <span className="fc-stamp unknown" style={{ opacity: dragX < 0 ? stamp : 0 }}>Chưa thuộc</span>
@@ -320,7 +345,7 @@ export default function FlashcardStudy({
                         {current.pronunciation && <div className="pronunciation">{current.pronunciation}</div>}
                       </div>
                     )}
-                    <div className="fc-foot">Chạm để lật · vuốt phải nếu đã thuộc, trái nếu chưa</div>
+                    <div className="fc-foot">Chạm để lật · quẹt ➜ phải nếu đã thuộc, ⬅ trái nếu chưa</div>
                   </div>
 
                   <div className="fc-face fc-back">

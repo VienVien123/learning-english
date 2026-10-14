@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { User } from "@supabase/supabase-js";
-import { Camera, Check, Loader2, LogOut, Mail, Trash2 } from "lucide-react";
+import { Camera, Check, Loader2, LogOut, Mail, Moon, Sun, Trash2, Volume2, VolumeX } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { effectiveStreak, levelInfo } from "@/lib/gamification";
 import type { UserProgress } from "@/lib/types";
@@ -35,7 +35,15 @@ export default function ProfileView({
   masteredCount,
   onUserUpdated,
   onSignOut,
+  theme,
+  onToggleTheme,
+  soundOn,
+  onToggleSound,
 }: {
+  theme: "light" | "dark";
+  onToggleTheme: () => void;
+  soundOn: boolean;
+  onToggleSound: () => void;
   user: User;
   progress: UserProgress;
   wordCount: number;
@@ -177,8 +185,17 @@ export default function ProfileView({
               <div><strong>🔥 {effectiveStreak(progress)}</strong><span>ngày liên tiếp · kỷ lục {progress.best_streak}</span></div>
             </div>
           </section>
-          <section className="panel profile-signout-card">
-            <button className="button secondary" onClick={onSignOut}><LogOut size={16} /> Đăng xuất</button>
+          <section className="panel profile-settings">
+            <h2>Cài đặt</h2>
+            <button className="setting-row" onClick={onToggleTheme}>
+              {theme === "dark" ? <Moon size={18} /> : <Sun size={18} />}<span>Giao diện tối</span>
+              <i className={`switch${theme === "dark" ? " on" : ""}`} aria-hidden="true" />
+            </button>
+            <button className="setting-row" onClick={onToggleSound}>
+              {soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}<span>Hiệu ứng âm thanh</span>
+              <i className={`switch${soundOn ? " on" : ""}`} aria-hidden="true" />
+            </button>
+            <button className="button secondary profile-signout-btn" onClick={onSignOut}><LogOut size={16} /> Đăng xuất</button>
           </section>
         </aside>
       </div>

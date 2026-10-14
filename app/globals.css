@@ -1692,3 +1692,117 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .profile-name .button { justify-content: center; }
 }
 .profile-chip { grid-template-columns: minmax(0, 1fr) auto; }
+
+/* =========================
+   Phone layout clean-up
+   ========================= */
+.touch-hint { display: none; margin: 0; color: var(--muted); font-size: 13px; text-align: center; }
+.setting-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 2px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--text); font-size: 15px; font-weight: 700; text-align: left; }
+.setting-row span { flex: 1; }
+.switch { position: relative; width: 44px; height: 26px; flex: 0 0 auto; border-radius: 999px; background: var(--line); transition: background-color .2s ease; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .2); transition: transform .2s ease; }
+.switch.on { background: var(--primary); }
+.switch.on::after { transform: translateX(18px); }
+.profile-settings h2 { margin: 0 0 6px; font-size: 16px; }
+.profile-signout-btn { width: 100%; justify-content: center; margin-top: 12px; color: var(--red); }
+
+/* Touch screens: shortcut legends are useless, gesture hints help. */
+@media (hover: none) and (pointer: coarse) {
+  .lesson-keys, .fc-keys, .learn-keys, .lesson-btn kbd, .lesson-hint-btn kbd, .lesson-option kbd { display: none !important; }
+  .touch-hint { display: block; }
+}
+
+@media (max-width: 780px) {
+  /* Top bar: menu · logo · avatar · add */
+  .desktop-only { display: none !important; }
+  .topbar { height: 60px; padding: 0 12px; gap: 8px; }
+  .mobile-brand { flex: 1; min-width: 0; }
+  .mobile-brand .brand-name { font-size: 18px; white-space: nowrap; }
+  .topbar-actions { gap: 8px; }
+  .topbar-actions .button.primary { width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 12px; }
+
+  /* Bottom bar: five tabs + "Thêm", all visible, no sideways scrolling */
+  .mobile-nav { grid-template-columns: repeat(6, 1fr) !important; overflow: visible !important; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)) !important; }
+  .mobile-nav button { min-width: 0 !important; min-height: 50px; font-size: 10.5px !important; font-weight: 700; border-radius: 12px; }
+  .mobile-nav button.active { background: var(--primary-soft); }
+  .app-shell { padding-bottom: calc(76px + env(safe-area-inset-bottom)) !important; }
+
+  /* Edge sprites sat on top of cards on narrow screens */
+  .app-backdrop { display: none; }
+
+  .content { padding: 18px 14px 28px !important; }
+  .page-header { margin-bottom: 16px !important; gap: 12px !important; }
+  .page-header h1 { font-size: 26px !important; }
+  .page-header p { font-size: 13px; }
+  .page-header .clean-select { width: 100%; min-width: 0; }
+
+  /* Flashcards: get the card and both answers on one screen */
+  .fc-toolbar { gap: 8px; margin-bottom: 10px; }
+  .fc-options { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .fc-options::-webkit-scrollbar { display: none; }
+  .fc-options button { flex: 0 0 auto; padding: 6px 11px; font-size: 12px; }
+  .fc-practice { margin: 0 0 10px; font-size: 12.5px; }
+  .fc-card { height: min(52svh, 360px); }
+  .fc-center h1 { font-size: 42px; }
+  .fc-actions { grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0 6px; }
+  .fc-btn.flip { display: none; }
+  .fc-btn { min-height: 54px; font-size: 15px; }
+
+  /* Games: two compact columns instead of five tall cards */
+  .games-grid { grid-template-columns: 1fr 1fr !important; gap: 10px !important; margin-top: 16px !important; }
+  .game-card { min-height: 0 !important; padding: 14px !important; border-radius: 18px !important; }
+  .game-card-icon { width: 42px !important; height: 42px !important; margin-bottom: 10px !important; border-radius: 13px !important; }
+  .game-card-copy h3 { font-size: 15px !important; }
+  .game-card-copy p { font-size: 11.5px; }
+  .game-card-footer { margin-top: 10px; }
+
+  /* Learn page: decks as compact rows, review list first */
+  .learn-hub { display: flex; flex-direction: column-reverse; gap: 14px; }
+  .learn-side { gap: 12px; }
+  .learn-overview { display: none; }
+  .learn-deck-grid { grid-template-columns: 1fr; gap: 10px; }
+  .learn-deck { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; padding: 14px 16px; border-radius: 18px; }
+  .learn-deck-head { grid-column: 1; }
+  .learn-deck-icon { width: 40px; height: 40px; font-size: 19px; }
+  .learn-deck-stats { grid-column: 1; grid-row: 2; font-size: 12px; }
+  .learn-deck .mini-progress { display: none; }
+  .learn-deck .button { grid-column: 2; grid-row: 1 / span 2; width: auto; padding: 0 16px; }
+  .page-header .button { width: 100%; justify-content: center; }
+
+  /* Profile */
+  .profile-name > div { flex-direction: column; }
+  .profile-name input { flex: none; }
+  .profile-name .button { justify-content: center; }
+  .profile-peek { --k: .72; }
+
+  /* Dashboard */
+  .learn-hero h1 { font-size: 28px !important; }
+  .hero-actions .button { flex: 1; justify-content: center; }
+  .heatmap { --cell: 12px; }
+
+  /* Lesson player on phones */
+  .lesson-top { padding: 12px 0 4px; gap: 10px; }
+  .lesson-main { padding: 0 14px; }
+  .lesson-body { gap: 16px; padding: 10px 0 16px; }
+  .lesson-prompt { font-size: 17px; }
+  .lesson-flip { height: min(52svh, 380px); margin-top: 26px; }
+  .lesson-foot { gap: 8px; padding: 10px 0 calc(16px + env(safe-area-inset-bottom)); }
+  .lesson-sheet-inner { padding: 16px 16px calc(18px + env(safe-area-inset-bottom)); gap: 10px; }
+  .lesson-sheet-word h3 { font-size: 20px; }
+  .lesson-sheet-word p { display: none; }
+  .lesson-audio { gap: 14px; }
+  .lesson-backdrop { display: none; }
+}
+@media (max-width: 780px) {
+  .learn-side, .learn-deck-grid { width: 100%; }
+  .page-header .eyebrow, .page-header p { display: none; }
+  .page-header h1 { margin: 0 !important; }
+  .fc-card { height: min(44svh, 340px); }
+  .fc-progress { margin-bottom: 0; }
+  .study-peek { --k: .62 !important; }
+}
+/* Let swipes reach the cards instead of scrolling the page. */
+.lesson-flip-inner { touch-action: none; }
+/* Sideways swipes on cards must not trigger the browser's back/forward gesture. */
+html, body { overscroll-behavior-x: none; }
+.fc-card { touch-action: pan-y pinch-zoom; }
