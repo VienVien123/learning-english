@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { playSound } from "@/lib/sound";
 
 export type Bloom = "pink" | "yellow" | "green";
 export type Item = "star-pink" | "star-yellow" | "flower-pink" | "flower-yellow" | "flower-green";
@@ -281,6 +282,7 @@ export function useSootEyes() {
 
 function hopOnClick(e: { currentTarget: Element }) {
   restartClass(e.currentTarget, "hop");
+  playSound("pop");
 }
 
 function clearHop(e: { target: EventTarget; currentTarget: Element }) {

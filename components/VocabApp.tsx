@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen, Brain, ChartNoAxesCombined, Check, ChevronDown, FolderOpen, Heart,
   LayoutDashboard, Library, Loader2, Moon, MoreHorizontal, Pencil, Plus, Search, Sparkles,
-  Sun, Trash2, Volume2, Wifi, WifiOff, X, Zap, LogOut, Gamepad2, Trophy, FileUp,
+  Sun, Trash2, Volume2, VolumeX, Wifi, WifiOff, X, Zap, LogOut, Gamepad2, Trophy, FileUp,
   Menu, Pin, PinOff
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
@@ -17,6 +17,7 @@ import DeckModal, { type DeckDraft } from "./DeckModal";
 import FlashcardStudy from "./FlashcardStudy";
 import LessonPlayer from "./LessonPlayer";
 import { reviewKeyFor, useReviewIds } from "@/lib/reviewList";
+import { useSoundOn } from "@/lib/sound";
 import AuthScreen from "./AuthScreen";
 import { LogoMark } from "./Logo";
 import { SootBackdrop, SootBuddy, SootCrew, useSootEyes, type CrewMember } from "./Soot";
@@ -116,6 +117,7 @@ export default function VocabApp() {
   // Fixed word list for a review lesson, captured when it starts.
   const [lessonIds, setLessonIds] = useState<string[] | null>(null);
   const reviewKey = reviewKeyFor(user?.id ?? "guest");
+  const [soundOn, toggleSound] = useSoundOn();
   const [reviewIds] = useReviewIds(reviewKey);
   const startLesson = (deckId: string) => { setLessonIds(null); setLessonDeck(deckId); };
   const startReviewLesson = (ids: string[]) => { setLessonIds(ids); setLessonDeck("review"); };
@@ -710,6 +712,7 @@ export default function VocabApp() {
           <div className="global-search"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search your vocabulary..." onFocus={() => setView("words")} /><kbd>⌘ K</kbd></div>
           <div className="topbar-actions">
             <span className={`sync-status ${online ? "online" : ""}`}>{syncing ? <Loader2 className="spin" size={14} /> : online ? <Check size={14} /> : <WifiOff size={14} />}{syncing ? "Syncing" : online ? "Live sync" : "Offline"}</span>
+            <button className="icon-btn" onClick={toggleSound} aria-label={soundOn ? "Tắt hiệu ứng âm thanh" : "Bật hiệu ứng âm thanh"} title={soundOn ? "Tắt hiệu ứng âm thanh" : "Bật hiệu ứng âm thanh"}>{soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}</button>
             <button className="icon-btn theme-mobile" onClick={toggleTheme}>{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button>
             <button className="icon-btn account-logout" onClick={handleSignOut} title={`Sign out ${user.email ?? ""}`}><LogOut size={17} /></button>
             <button className="button primary" onClick={() => { setEditingWord(null); setWordModalOpen(true); }}><Plus size={17} /> Add word</button>

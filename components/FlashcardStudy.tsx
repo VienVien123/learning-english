@@ -6,6 +6,7 @@ import type { ReviewRating, Vocabulary } from "@/lib/types";
 import { speakEnglish } from "@/lib/speech";
 import { isDue } from "@/lib/srs";
 import { useReviewIds } from "@/lib/reviewList";
+import { playSound } from "@/lib/sound";
 import { PeekCrew, SootBuddy, type CrewMember, type SignTone, type SootMood } from "./Soot";
 
 type Mode = "due" | "review" | "all";
@@ -133,6 +134,10 @@ export default function FlashcardStudy({
   const current = queue.length ? byId.get(queue[0]) : undefined;
   const finished = total > 0 && !current;
 
+  useEffect(() => {
+    if (finished) playSound("celebrate");
+  }, [finished]);
+
   const react = (next: Reaction, celebrate: boolean) => {
     setReaction(next);
     if (celebrate) setCheer((v) => v + 1);
@@ -142,6 +147,7 @@ export default function FlashcardStudy({
 
   const flip = useCallback(() => {
     if (!current) return;
+    playSound("flip");
     setRevealed((was) => {
       if (!was && prefs.autoSpeak) speakEnglish(current.word);
       return !was;
@@ -152,6 +158,7 @@ export default function FlashcardStudy({
     if (!current || exit) return;
     const word = current;
     setExit(verdict);
+    playSound(verdict === "known" ? "correct" : "wrong");
     setNoteDraft(null);
     react(verdict === "known" ? KNOWN_REACTION : UNKNOWN_REACTION, verdict === "known");
     setResults((prev) => [...prev, { id: word.id, verdict }]);

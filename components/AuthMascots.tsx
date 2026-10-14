@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { restartClass, SootSprite, type Look, type Tool } from "./Soot";
+import { playSound } from "@/lib/sound";
 
 type Focus = "none" | "text" | "password";
 type Mood = "idle" | "watching" | "curious" | "shy" | "busy" | "error" | "happy" | "celebrate";
@@ -271,6 +272,7 @@ export default function AuthMascots({ passwordVisible, busy, error, sign = "", n
         ripple.style.top = `${e.clientY - box.top}px`;
         ripple.addEventListener("animationend", () => ripple.remove());
         backdrop.appendChild(ripple);
+        playSound("pop");
       }
       dustRefs.current.forEach((d) => {
         if (!d) return;
@@ -341,9 +343,14 @@ export default function AuthMascots({ passwordVisible, busy, error, sign = "", n
   useEffect(() => {
     if (!error) return;
     setErrorFlash(true);
+    playSound("wrong");
     const t = setTimeout(() => setErrorFlash(false), 3200);
     return () => clearTimeout(t);
   }, [error]);
+
+  useEffect(() => {
+    if (celebrate) playSound("celebrate");
+  }, [celebrate]);
 
   useEffect(() => {
     if (!notice) return;
@@ -419,7 +426,7 @@ export default function AuthMascots({ passwordVisible, busy, error, sign = "", n
                 <div
                   ref={(el) => { bobRefs.current[i] = el; }}
                   className="soot-bob"
-                  onClick={() => hop(i)}
+                  onClick={() => { hop(i); playSound("pop"); }}
                   onAnimationEnd={(e) => {
                     if (e.target !== e.currentTarget) return;
                     e.currentTarget.classList.remove("hop", "nod");

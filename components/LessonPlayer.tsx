@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { ArrowRight, BookOpen, Check, Lightbulb, Volume2, X } from "lucide-react";
+import { ArrowRight, BookOpen, Check, Lightbulb, Volume2, VolumeX, X } from "lucide-react";
 import type { ReviewRating, Vocabulary } from "@/lib/types";
 import { speakEnglish } from "@/lib/speech";
 import { isDue } from "@/lib/srs";
 import { addReviewId, removeReviewId, useReviewIds } from "@/lib/reviewList";
+import { playSound, useSoundOn } from "@/lib/sound";
 import { PeekCrew, SootBuddy, SootSprite, type CrewMember, type Look } from "./Soot";
 
 type Step = { kind: "intro" | "write"; id: string };
@@ -107,6 +108,11 @@ export default function LessonPlayer({
   const step = steps[index];
   const word = step ? byId.get(step.id) : undefined;
   const finished = steps.length > 0 && index >= steps.length;
+  const [soundOn, toggleSound] = useSoundOn();
+
+  useEffect(() => {
+    if (finished) playSound("celebrate");
+  }, [finished]);
   const progress = steps.length ? Math.min(100, (index / steps.length) * 100) : 0;
   // Appending a retry step must not reset the step on screen, so effects key off this.
   const stepKey = step ? `${round}-${index}-${step.kind}-${step.id}` : "";
@@ -134,6 +140,7 @@ export default function LessonPlayer({
   const flipIntro = useCallback(() => {
     // Read the word aloud when turning to the meaning side, not when turning back.
     if (!flipped && word) speakEnglish(word.word);
+    playSound("flip");
     setFlipped(!flipped);
     setSeenBack(true);
   }, [flipped, word]);
@@ -142,6 +149,7 @@ export default function LessonPlayer({
   const markKnown = useCallback(() => {
     if (!word) return;
     void onReview(word, 3).catch(() => {});
+    playSound("correct");
     removeReviewId(reviewKey, word.id);
     setSteps((s) => s.filter((st, i) => i <= index || st.id !== word.id));
     setResult(null);
@@ -161,7 +169,10 @@ export default function LessonPlayer({
     setInput(answer);
     setResult({ correct, answer });
     setTally((t) => ({ correct: t.correct + (correct ? 1 : 0), wrong: t.wrong + (correct ? 0 : 1) }));
-    speakEnglish(word.word);
+    playSound(correct ? "correct" : "wrong");
+    // Let the chime finish before the word is read.
+    const spoken = word.word;
+    window.setTimeout(() => speakEnglish(spoken), 320);
     void onReview(word, correct ? 2 : 0).catch(() => {});
     if (correct) removeReviewId(reviewKey, word.id);
     else addReviewId(reviewKey, word.id);
@@ -205,10 +216,11 @@ export default function LessonPlayer({
         return;
       }
 
-      // A focused button handles Enter itself.
       // While an IME (Telex, VNI…) is composing, Chrome reports key "Process"; the physical code is still Enter.
       const isEnter = e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter";
-      if (!isEnter || target.tagName === "BUTTON") return;
+      // The main action buttons handle Enter themselves; on any other focused button
+      // (speaker, hint, sound toggle…) Enter still drives the lesson instead of re-clicking it.
+      if (!isEnter || target.closest(".lesson-btn, .lesson-known")) return;
       e.preventDefault();
       if (step?.kind === "intro") {
         if (seenBack) next();
@@ -243,6 +255,7 @@ export default function LessonPlayer({
       <div className="lesson-main">
         <header className="lesson-top">
           <button className="lesson-close" onClick={onClose} aria-label="Thoát bài học"><X size={24} /></button>
+          <button className="lesson-close lesson-sound" onClick={toggleSound} aria-label={soundOn ? "Tắt hiệu ứng âm thanh" : "Bật hiệu ứng âm thanh"} title={soundOn ? "Tắt hiệu ứng âm thanh" : "Bật hiệu ứng âm thanh"}>{soundOn ? <Volume2 size={22} /> : <VolumeX size={22} />}</button>
           <div className="lesson-progress">
             <span style={{ width: `${finished ? 100 : progress}%` }} />
             <i className="lesson-rider" style={{ left: `${finished ? 100 : progress}%` }}>

@@ -1522,3 +1522,4 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .learn-review .button { grid-column: 1 / -1; justify-content: center; }
 .fc-practice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: -4px 0 14px; padding: 10px 14px; border: 1px dashed color-mix(in srgb, #ef7183 45%, var(--line)); border-radius: 14px; background: color-mix(in srgb, var(--surface) 92%, #ffe5e9); color: var(--muted); font-size: 13.5px; }
 .lesson-review-left { color: var(--muted); font-size: 14px; }
+.lesson-sound { order: 3; }

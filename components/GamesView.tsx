@@ -8,6 +8,7 @@ import {
 import type { UserProgress, Vocabulary } from "@/lib/types";
 import { DAILY_GOAL, effectiveDailyAnswers, effectiveStreak, gameAccuracy, levelInfo } from "@/lib/gamification";
 import { speakEnglish, speakEnglishAndWait } from "@/lib/speech";
+import { playSound } from "@/lib/sound";
 import { PeekCrew, SootBuddy, type CrewMember, type SignTone, type SootMood } from "./Soot";
 
 const GAME_CREW: CrewMember[] = [
@@ -73,6 +74,7 @@ export default function GamesView({ words, progress, onActivity }: {
 
   // The crew above the game board cheers for right answers and holds up signs for wrong ones.
   function react(correct: boolean, nextCombo: number) {
+    playSound(!correct ? "wrong" : nextCombo >= 3 ? "combo" : "correct");
     const praise = CHEERS[Math.floor(Math.random() * CHEERS.length)];
     setReaction(correct
       ? { mood: "happy", signs: [undefined, nextCombo >= 3 ? `Combo x${nextCombo}!` : undefined, praise, undefined], tone: "good" }
@@ -248,6 +250,7 @@ function MatchGame({ words, award }: { words: Vocabulary[]; award: AwardFn }) {
     const correct = selectedWord === id;
     void award(8, correct);
     if (correct) {
+      if (matched.length + 1 === pairs.length) window.setTimeout(() => playSound("celebrate"), 350);
       setMatched((v) => [...v, id]);
       setSelectedWord(null);
       setWrong(null);
@@ -282,7 +285,7 @@ function SpeedGame({ words, award }: { words: Vocabulary[]; award: AwardFn }) {
   // The clock pauses while the picked word is being read aloud.
   useEffect(() => {
     if (!running || picked) return;
-    if (seconds <= 0) { setRunning(false); return; }
+    if (seconds <= 0) { setRunning(false); playSound("celebrate"); return; }
     const id = window.setTimeout(() => setSeconds((v) => v - 1), 1000);
     return () => window.clearTimeout(id);
   }, [seconds, running, picked]);
