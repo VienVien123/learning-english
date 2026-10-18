@@ -1,11 +1,9 @@
 import type { GrammarLevel, GrammarTopic } from "./types";
-// TEMP: a2 is still being written — re-enable once the files exist.
 import { A1_TOPICS } from "./a1";
-// import { A2_TOPICS } from "./a2";
+import { A2_TOPICS } from "./a2";
 import { B1_TOPICS } from "./b1";
 import { B2_TOPICS } from "./b2";
 import { C1_TOPICS } from "./c1";
-const A2_TOPICS: GrammarTopic[] = [];
 
 export type { GrammarExercise, GrammarLevel, GrammarTopic } from "./types";
 
