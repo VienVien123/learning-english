@@ -5,7 +5,7 @@ import {
   BookOpen, Brain, ChartNoAxesCombined, Check, ChevronDown, FolderOpen, Heart,
   LayoutDashboard, Library, Loader2, Moon, MoreHorizontal, Pencil, Plus, Search, Sparkles,
   Sun, Trash2, Volume2, VolumeX, Wifi, WifiOff, Download, X, Zap, LogOut, Gamepad2, Trophy, FileUp,
-  Menu, Pin, PinOff
+  Menu, Pin, PinOff, BookOpenCheck
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
@@ -33,6 +33,7 @@ const loadGames = () => import("./GamesView");
 const loadWordModal = () => import("./WordModal");
 const loadImport = () => import("./ImportWordsModal");
 const loadProfile = () => import("./ProfileView");
+const loadGrammar = () => import("./GrammarView");
 const AuthScreen = dynamic(loadAuth, { loading: () => <BootScreen text="Loading…" /> });
 const FlashcardStudy = dynamic(loadFlashcards);
 const LessonPlayer = dynamic(loadLesson);
@@ -41,10 +42,12 @@ const AchievementsView = dynamic(() => loadGames().then((m) => m.AchievementsVie
 const WordModal = dynamic(loadWordModal);
 const ImportWordsModal = dynamic(loadImport);
 const ProfileView = dynamic(loadProfile);
+const GrammarView = dynamic(loadGrammar, { loading: () => <BootScreen text="Đang mở ngữ pháp…" /> });
 
 const navItems: { id: ViewName; label: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "learn", label: "Học từ mới", icon: Sparkles },
+  { id: "grammar", label: "Ngữ pháp", icon: BookOpenCheck },
   { id: "words", label: "Vocabulary", icon: Library },
   { id: "flashcards", label: "Flashcards", icon: Brain },
   { id: "games", label: "Games", icon: Gamepad2 },
@@ -54,7 +57,7 @@ const navItems: { id: ViewName; label: string; icon: React.ElementType }[] = [
 ];
 
 const navGroups: { label: string; items: typeof navItems }[] = [
-  { label: "LEARN", items: navItems.filter(({ id }) => ["dashboard", "learn", "words", "decks"].includes(id)) },
+  { label: "LEARN", items: navItems.filter(({ id }) => ["dashboard", "learn", "grammar", "words", "decks"].includes(id)) },
   { label: "PRACTICE", items: navItems.filter(({ id }) => ["flashcards", "games"].includes(id)) },
   { label: "PROGRESS", items: navItems.filter(({ id }) => ["stats", "achievements"].includes(id)) },
 ];
@@ -65,6 +68,7 @@ const MOBILE_TABS: ViewName[] = ["dashboard", "learn", "flashcards", "games", "w
 const mobileNavLabels: Record<ViewName, string> = {
   dashboard: "Home",
   learn: "Learn",
+  grammar: "Grammar",
   words: "Words",
   flashcards: "Cards",
   games: "Games",
@@ -800,6 +804,7 @@ export default function VocabApp() {
           {view === "dashboard" && <Dashboard name={profileName(user)} words={words} decks={decks} stats={stats} progress={progress} weakWords={weakWords} setView={setView} openDeck={(id) => { setDeckFilter(id); setView("words"); }} openAdd={() => { setEditingWord(null); setWordModalOpen(true); }} startLesson={startLesson} userId={user.id} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />}
           {view === "profile" && <ProfileView user={user} progress={progress} wordCount={stats.total} masteredCount={stats.mastered} onUserUpdated={setUser} onSignOut={handleSignOut} theme={theme} onToggleTheme={toggleTheme} soundOn={soundOn} onToggleSound={toggleSound} />}
           {view === "learn" && <LearnHub words={words} decks={decks} startLesson={startLesson} reviewCount={words.filter((w) => reviewIds.includes(w.id)).length} startReview={() => startReviewLesson(reviewIds)} />}
+          {view === "grammar" && <GrammarView userId={user.id} onActivity={(xp, correct) => recordActivity(xp, correct, false)} />}
           {view === "words" && <VocabularyView words={filteredWords} decks={decks} query={query} setQuery={setQuery} deckFilter={deckFilter} setDeckFilter={setDeckFilter} levelFilter={levelFilter} setLevelFilter={setLevelFilter} onEdit={(w) => { setEditingWord(w); setWordModalOpen(true); }} onDelete={deleteWord} onFavorite={toggleFavorite} onImport={() => setImportModalOpen(true)} onAdd={() => { setEditingWord(null); setWordModalOpen(true); }} />}
           {view === "flashcards" && (
             <div>
@@ -816,7 +821,7 @@ export default function VocabApp() {
 
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {navItems.filter((item) => MOBILE_TABS.includes(item.id)).map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} aria-current={view === item.id ? "page" : undefined} onClick={() => setView(item.id)}><Icon size={22} /><span>{mobileNavLabels[item.id]}</span></button>; })}
-        <button className={["decks", "stats", "achievements"].includes(view) || sidebarOpen ? "active" : ""} onClick={toggleSidebar} aria-label="Thêm mục"><Menu size={22} /><span>Thêm</span></button>
+        <button className={["grammar", "decks", "stats", "achievements"].includes(view) || sidebarOpen ? "active" : ""} onClick={toggleSidebar} aria-label="Thêm mục"><Menu size={22} /><span>Thêm</span></button>
       </nav>
 
       {lessonDeck && (
