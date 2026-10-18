@@ -76,6 +76,7 @@ export default function WordModal({
   draftStorageKey,
   onClose,
   onSave,
+  findExisting,
 }: {
   open: boolean;
   decks: Deck[];
@@ -87,6 +88,8 @@ export default function WordModal({
   draftStorageKey?: string;
   onClose: () => void;
   onSave: (data: WordDraft) => Promise<void>;
+  // Another saved entry with the same word, if any.
+  findExisting?: (word: string) => Vocabulary | undefined;
 }) {
   const [draft, setDraft] = useState<WordDraft>(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -105,6 +108,8 @@ export default function WordModal({
   const skipAutoForRef = useRef("");
 
   const title = useMemo(() => (initial ? "Edit vocabulary" : "Add a new word"), [initial]);
+  const duplicate = draft.word.trim() ? findExisting?.(draft.word) : undefined;
+  const duplicateDeck = duplicate ? decks.find((d) => d.id === duplicate.deck_id) : undefined;
   const actualStorageKey = useMemo(() => {
     const base = draftStorageKey ?? "lexibloom-word-draft";
     return `${base}:${initial?.id ?? "new"}`;
@@ -377,6 +382,13 @@ export default function WordModal({
               <input value={draft.meaning} onChange={(e) => update("meaning", e.target.value)} placeholder="sự tình cờ may mắn" />
             </label>
           </div>
+
+          {duplicate && (
+            <div className="duplicate-note" role="status">
+              <strong>“{duplicate.word}” đã có trong thư viện{duplicateDeck ? ` (bộ ${duplicateDeck.icon} ${duplicateDeck.name})` : ""}.</strong>
+              <span>Khi lưu, app sẽ giữ bản có giải thích đầy đủ hơn và xoá bản còn lại. Tiến độ ôn được giữ nguyên.</span>
+            </div>
+          )}
 
           {spellFix && (
             <div className="spell-fix" role="alert">

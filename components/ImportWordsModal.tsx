@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Deck, Vocabulary } from "@/lib/types";
+import { wordKey } from "@/lib/duplicates";
 
 const REQUIRED_COLUMNS = ["word", "meaning"] as const;
 const SUPPORTED_COLUMNS = [
@@ -78,10 +79,6 @@ function list(value: unknown) {
 function bool(value: unknown) {
   const raw = text(value).toLowerCase();
   return ["true", "1", "yes", "y", "x", "có", "co"].includes(raw);
-}
-
-function wordKey(word: string) {
-  return word.trim().toLocaleLowerCase("en-US");
 }
 
 function chunks<T>(items: T[], size: number) {

@@ -15,7 +15,8 @@ import { effectiveDailyAnswers, effectiveStreak, emptyProgress, getWeakWords, le
 import dynamic from "next/dynamic";
 import type { WordDraft } from "./WordModal";
 import DeckModal, { type DeckDraft } from "./DeckModal";
-import { reviewKeyFor, useReviewIds } from "@/lib/reviewList";
+import { reviewKeyFor, updateReviewIds, useReviewIds } from "@/lib/reviewList";
+import { mergeDuplicateWords, mergeMessage, wordKey } from "@/lib/duplicates";
 import { useSoundOn } from "@/lib/sound";
 import { GOAL_OPTIONS, useDailyGoal } from "@/lib/dailyGoal";
 import ActivityHeatmap from "./ActivityHeatmap";
@@ -220,9 +221,11 @@ export default function VocabApp() {
     return { total, mastered, due, reviewed, accuracy, mastery };
   }, [words]);
 
-  const showToast = useCallback((message: string) => {
+  const toastTimerRef = useRef<number | undefined>(undefined);
+  const showToast = useCallback((message: string, duration = 2500) => {
     setToast(message);
-    window.setTimeout(() => setToast(""), 2500);
+    window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(""), duration);
   }, []);
 
   const loadData = useCallback(async (uid: string, quiet = false) => {
@@ -255,8 +258,20 @@ export default function VocabApp() {
       }
     }
 
+    // The same word saved twice (any deck, any letter case): keep the better-explained copy.
+    let nextWords = (wordsRes.data ?? []) as Vocabulary[];
+    if (!wordsRes.error) {
+      const { words: deduped, report } = await mergeDuplicateWords(uid, nextWords);
+      nextWords = deduped;
+      if (report.replacedBy.size) {
+        updateReviewIds(reviewKeyFor(uid), (ids) => [...new Set(ids.map((id) => report.replacedBy.get(id) ?? id))]);
+      }
+      if (report.merged.length) showToast(mergeMessage(report.merged), 7000);
+      else if (report.error) showToast(`Không thể gộp từ trùng: ${report.error}`, 5000);
+    }
+
     setDecks(nextDecks);
-    setWords((wordsRes.data ?? []) as Vocabulary[]);
+    setWords(nextWords);
 
     if (progressRes.data) {
       setProgress(progressRes.data as UserProgress);
@@ -840,6 +855,7 @@ export default function VocabApp() {
         decks={decks}
         initial={editingWord}
         draftStorageKey={`lexibloom-word-draft:${user.id}`}
+        findExisting={(text) => words.find((w) => w.id !== editingWord?.id && wordKey(w.word) === wordKey(text))}
         onClose={() => { setWordModalOpen(false); setEditingWord(null); }}
         onSave={saveWord}
       />

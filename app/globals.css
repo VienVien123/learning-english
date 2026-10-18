@@ -1816,6 +1816,14 @@ html, body { overscroll-behavior-x: none; }
 :root[data-theme="dark"] .spell-fix strong { color: #f3c46b; }
 :root[data-theme="dark"] .spell-fix span { color: #d6b26a; }
 
+/* Word form: the same word is already saved */
+.duplicate-note { display: grid; gap: 3px; margin: 4px 0 12px; padding: 10px 14px; border: 1.5px dashed #f3c46b; border-radius: 14px; background: #fffbf0; }
+.duplicate-note strong { color: #8a5a10; font-size: 14px; }
+.duplicate-note span { color: #a07a3a; font-size: 12.5px; line-height: 1.5; }
+:root[data-theme="dark"] .duplicate-note { background: #2c2414; border-color: #6b5320; }
+:root[data-theme="dark"] .duplicate-note strong { color: #f3c46b; }
+:root[data-theme="dark"] .duplicate-note span { color: #d6b26a; }
+
 /* Grammar course */
 .grammar { width: 100%; max-width: 1080px; margin: 0 auto; }
 .gr-summary { display: flex; align-items: center; gap: 18px; margin-bottom: 18px; }
